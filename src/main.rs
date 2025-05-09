@@ -1,11 +1,44 @@
-use std::net::SocketAddr;
+use std::{
+    fs::{self},
+    io::{self},
+    net::SocketAddr,
+    sync::Arc,
+};
 
-use hyper::{server::conn::http1, service::service_fn};
-use hyper_util::rt::TokioIo;
+use hyper::service::service_fn;
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto::Builder,
+};
+use rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer},
+    ServerConfig,
+};
 use tokio::net::{TcpListener, TcpStream};
+
+use argh::FromArgs;
+use tokio_rustls::TlsAcceptor;
+
+#[derive(FromArgs)]
+#[argh(description = "certificates")]
+struct Options {
+    /// cert file
+    #[argh(option, short = 'c')]
+    cert: String,
+
+    /// key file
+    #[argh(option, short = 'k')]
+    key: String,
+}
+
+fn error(err: String) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, err)
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let options: Options = argh::from_env();
+
     println!("Starting server");
 
     let server_addr: SocketAddr = ([127, 0, 0, 1], 8080).into();
@@ -20,9 +53,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Listening on http://{}", server_addr);
     println!("Proxying on http://{}", target_addr);
 
+    // Load public certificate.
+    let certs = load_certs(&options.cert)?;
+    // Load private key.
+    let key = load_private_key(&options.key)?;
+
+    let server_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .expect("Bad certificate/key");
+
+    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+
     loop {
         let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
+
+        let acceptor = tls_acceptor.clone();
 
         // This is the `Service` that will handle the connection.
         // `service_fn` is a helper to convert a function that
@@ -59,9 +105,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
 
         tokio::task::spawn(async move {
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                println!("Failed to serve the connection: {:?}", err);
+            let stream = match acceptor.accept(stream).await {
+                Ok(stream) => stream,
+                Err(err) => {
+                    eprintln!("failed to perform tls handshake: {err:#}");
+                    return;
+                }
+            };
+            if let Err(err) = Builder::new(TokioExecutor::new())
+                .serve_connection(TokioIo::new(stream), service)
+                .await
+            {
+                eprintln!("failed to serve connection: {err:#}");
             }
         });
     }
+}
+
+// Load public certificate from file.
+fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
+    // Open certificate file.
+    let certfile = fs::File::open(filename)
+        .map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+    let mut reader = io::BufReader::new(certfile);
+
+    // Load and return certificate.
+    rustls_pemfile::certs(&mut reader).collect()
+}
+
+// Load private key from file.
+fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
+    // Open keyfile.
+    let keyfile = fs::File::open(filename)
+        .map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
+    let mut reader = io::BufReader::new(keyfile);
+
+    // Load and return a single private key.
+    rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
 }
