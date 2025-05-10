@@ -1,3 +1,5 @@
+mod proxy_handler;
+
 use std::{
     fs::{self},
     io::{self},
@@ -5,14 +7,8 @@ use std::{
     sync::Arc,
 };
 
-use http_body_util::Full;
-use hyper::{
-    body::{Bytes, Incoming},
-    service::service_fn,
-    Method, Request, Response,
-};
+use hyper::service::service_fn;
 use hyper_util::{
-    client::legacy::Client,
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
@@ -20,7 +16,7 @@ use rustls::{
     pki_types::{CertificateDer, PrivateKeyDer},
     ServerConfig,
 };
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 
 use argh::FromArgs;
 use tokio_rustls::TlsAcceptor;
@@ -80,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This is the `Service` that will handle the connection.
         // `service_fn` is a helper to convert a function that
         // returns a Response into a `Service`.
-        let service = service_fn(move |req| proxy_handler(req, target_addr_clone));
+        let service = service_fn(move |req| proxy_handler::proxy_handler(req, target_addr_clone));
 
         tokio::task::spawn(async move {
             let stream = match acceptor.accept(stream).await {
@@ -98,35 +94,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
-}
-
-async fn proxy_handler(
-    req: Request<Incoming>,
-    target_addr_clone: SocketAddr,
-) -> Result<Response<Incoming>, hyper_util::client::legacy::Error> {
-    let uri_string = format!(
-        "http://{}{}",
-        target_addr_clone,
-        req.uri()
-            .path_and_query()
-            .map(|x| x.as_str())
-            .unwrap_or("/")
-    );
-
-    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-
-    let (parts, _body) = req.into_parts();
-
-    let mut new_req: Request<Full<Bytes>> = Request::builder()
-        .method(parts.method)
-        .uri(uri_string)
-        .body(Full::from(""))
-        .expect("request builder");
-
-    *new_req.headers_mut() = parts.headers;
-
-    let future = client.request(new_req);
-    future.await
 }
 
 // Load public certificate from file.
