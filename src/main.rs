@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use hyper::service::service_fn;
+use hyper::{body::Incoming, service::service_fn, Request, Response};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
@@ -73,36 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This is the `Service` that will handle the connection.
         // `service_fn` is a helper to convert a function that
         // returns a Response into a `Service`.
-        let service = service_fn(move |mut req| {
-            let uri_string = format!(
-                "http://{}{}",
-                target_addr_clone,
-                req.uri()
-                    .path_and_query()
-                    .map(|x| x.as_str())
-                    .unwrap_or("/")
-            );
-            let uri = uri_string.parse().unwrap();
-            *req.uri_mut() = uri;
-
-            let host = req.uri().host().expect("uri has no host");
-            let port = req.uri().port_u16().unwrap_or(80);
-            let addr = format!("{}:{}", host, port);
-
-            async move {
-                let client_stream = TcpStream::connect(addr).await.unwrap();
-                let io = TokioIo::new(client_stream);
-
-                let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
-                tokio::task::spawn(async move {
-                    if let Err(err) = conn.await {
-                        println!("Connection failed: {:?}", err);
-                    }
-                });
-
-                sender.send_request(req).await
-            }
-        });
+        let service = service_fn(move |req| proxy_handler(req, target_addr_clone));
 
         tokio::task::spawn(async move {
             let stream = match acceptor.accept(stream).await {
@@ -120,6 +91,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+}
+
+async fn proxy_handler(
+    mut req: Request<Incoming>,
+    target_addr_clone: SocketAddr,
+) -> Result<Response<Incoming>, hyper::Error> {
+    let uri_string = format!(
+        "http://{}{}",
+        target_addr_clone,
+        req.uri()
+            .path_and_query()
+            .map(|x| x.as_str())
+            .unwrap_or("/")
+    );
+    let uri = uri_string.parse().unwrap();
+    *req.uri_mut() = uri;
+
+    let host = req.uri().host().expect("uri has no host");
+    let port = req.uri().port_u16().unwrap_or(80);
+    let addr = format!("{}:{}", host, port);
+
+    let client_stream = TcpStream::connect(addr).await.unwrap();
+    let io = TokioIo::new(client_stream);
+
+    let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
+    tokio::task::spawn(async move {
+        if let Err(err) = conn.await {
+            println!("Connection failed: {:?}", err);
+        }
+    });
+
+    sender.send_request(req).await
 }
 
 // Load public certificate from file.
