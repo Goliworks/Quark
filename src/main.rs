@@ -5,8 +5,14 @@ use std::{
     sync::Arc,
 };
 
-use hyper::{body::Incoming, service::service_fn, Request, Response};
+use http_body_util::Full;
+use hyper::{
+    body::{Bytes, Incoming},
+    service::service_fn,
+    Method, Request, Response,
+};
 use hyper_util::{
+    client::legacy::Client,
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
@@ -58,10 +64,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load private key.
     let key = load_private_key(&options.key)?;
 
-    let server_config = ServerConfig::builder()
+    let mut server_config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .expect("Bad certificate/key");
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
@@ -94,9 +101,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn proxy_handler(
-    mut req: Request<Incoming>,
+    req: Request<Incoming>,
     target_addr_clone: SocketAddr,
-) -> Result<Response<Incoming>, hyper::Error> {
+) -> Result<Response<Incoming>, hyper_util::client::legacy::Error> {
     let uri_string = format!(
         "http://{}{}",
         target_addr_clone,
@@ -105,24 +112,21 @@ async fn proxy_handler(
             .map(|x| x.as_str())
             .unwrap_or("/")
     );
-    let uri = uri_string.parse().unwrap();
-    *req.uri_mut() = uri;
 
-    let host = req.uri().host().expect("uri has no host");
-    let port = req.uri().port_u16().unwrap_or(80);
-    let addr = format!("{}:{}", host, port);
+    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
 
-    let client_stream = TcpStream::connect(addr).await.unwrap();
-    let io = TokioIo::new(client_stream);
+    let (parts, _body) = req.into_parts();
 
-    let (mut sender, conn) = hyper::client::conn::http1::handshake(io).await?;
-    tokio::task::spawn(async move {
-        if let Err(err) = conn.await {
-            println!("Connection failed: {:?}", err);
-        }
-    });
+    let mut new_req: Request<Full<Bytes>> = Request::builder()
+        .method(parts.method)
+        .uri(uri_string)
+        .body(Full::from(""))
+        .expect("request builder");
 
-    sender.send_request(req).await
+    *new_req.headers_mut() = parts.headers;
+
+    let future = client.request(new_req);
+    future.await
 }
 
 // Load public certificate from file.
