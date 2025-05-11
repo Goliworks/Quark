@@ -1,3 +1,4 @@
+mod config;
 mod proxy_handler;
 
 use std::{
@@ -7,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use hyper::service::service_fn;
+use hyper::{server, service::service_fn};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
@@ -26,11 +27,7 @@ use tokio_rustls::TlsAcceptor;
 struct Options {
     /// cert file
     #[argh(option, short = 'c')]
-    cert: String,
-
-    /// key file
-    #[argh(option, short = 'k')]
-    key: String,
+    config: String,
 }
 
 fn error(err: String) -> io::Error {
@@ -42,6 +39,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
 
     println!("Starting server");
+
+    // Load TOML server config.
+    let server_config = config::get_toml_config(options.config);
 
     let server_addr: SocketAddr = ([127, 0, 0, 1], 8080).into();
 
@@ -55,10 +55,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Listening on http://{}", server_addr);
     println!("Proxying on http://{}", target_addr);
 
-    // Load public certificate.
-    let certs = load_certs(&options.cert)?;
-    // Load private key.
-    let key = load_private_key(&options.key)?;
+    // Load public certificate from config file.
+    let certs = load_certs(
+        &server_config.services["server1"]
+            .tls
+            .as_ref()
+            .unwrap()
+            .certificate,
+    )?;
+    // Load private key from config file.
+    let key = load_private_key(&server_config.services["server1"].tls.as_ref().unwrap().key)?;
 
     let mut server_config = ServerConfig::builder()
         .with_no_client_auth()
