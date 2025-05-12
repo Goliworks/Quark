@@ -11,6 +11,7 @@ pub struct ConfigToml {
 pub struct Service {
     pub domain: String,
     pub location: String,
+    pub port: Option<u16>,
     pub tls: Option<Tls>,
 }
 
@@ -18,4 +19,5 @@ pub struct Service {
 pub struct Tls {
     pub certificate: String,
     pub key: String,
+    pub port: Option<u16>,
 }

@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+use config::ServiceConfig;
 use hyper::{server, service::service_fn};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
@@ -38,10 +39,17 @@ fn error(err: String) -> io::Error {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
 
+    // Temporary.
+    let options_config = options.config.clone();
+
     println!("Starting server");
 
     // Load TOML server config.
     let server_config = config::get_toml_config(options.config);
+
+    let service_config = ServiceConfig::build_from(options_config);
+
+    println!("\n\n{:?}", service_config);
 
     let server_addr: SocketAddr = ([127, 0, 0, 1], 8080).into();
 
