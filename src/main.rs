@@ -8,8 +8,9 @@ use std::{
     sync::Arc,
 };
 
+use ::futures::future::join_all;
 use config::ServiceConfig;
-use hyper::{server, service::service_fn};
+use hyper::service::service_fn;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
@@ -26,7 +27,7 @@ use tokio_rustls::TlsAcceptor;
 #[derive(FromArgs)]
 #[argh(description = "certificates")]
 struct Options {
-    /// cert file
+    /// config file path.
     #[argh(option, short = 'c')]
     config: String,
 }
@@ -38,76 +39,101 @@ fn error(err: String) -> io::Error {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
-
-    // Temporary.
     let options_config = options.config.clone();
 
     println!("Starting server");
 
-    // Load TOML server config.
-    let server_config = config::get_toml_config(options.config);
+    // Liste of servers to start.
+    let mut servers = Vec::new();
 
+    // Read config file and build de server configuration via the path defined in options on startup.
     let service_config = ServiceConfig::build_from(options_config);
 
-    println!("\n\n{:?}", service_config);
+    println!("\n\n{:?}\n\n", service_config);
 
-    let server_addr: SocketAddr = ([127, 0, 0, 1], 8080).into();
+    // Build a server for each port defined in the config file.
+    for (port, server) in service_config.servers {
+        println!("Server listening on port {}", port);
 
-    // Test server
-    let target_addr: SocketAddr = ([127, 0, 0, 1], 1234).into();
+        let server_addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
-    let target_addr_clone = target_addr;
+        let service = async move {
+            let listener = TcpListener::bind(server_addr).await.unwrap();
 
-    let listener = TcpListener::bind(server_addr).await?;
+            match server.tls {
+                // If server has TLS configuration, create a server for https.
+                Some(tls) => {
+                    // Temporary use the first certificate found. Need to implement SNI later.
+                    let certs = load_certs(&tls[0].cert).unwrap();
+                    let key = load_private_key(&tls[0].key).unwrap();
 
-    println!("Listening on http://{}", server_addr);
-    println!("Proxying on http://{}", target_addr);
+                    let mut server_config = ServerConfig::builder()
+                        .with_no_client_auth()
+                        .with_single_cert(certs, key)
+                        .expect("Bad certificate/key");
+                    server_config.alpn_protocols =
+                        vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
-    // Load public certificate from config file.
-    let certs = load_certs(
-        &server_config.services["server1"]
-            .tls
-            .as_ref()
-            .unwrap()
-            .certificate,
-    )?;
-    // Load private key from config file.
-    let key = load_private_key(&server_config.services["server1"].tls.as_ref().unwrap().key)?;
+                    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
-    let mut server_config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .expect("Bad certificate/key");
-    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+                    // TEST ! TO remove !
+                    let target_addr: SocketAddr = ([127, 0, 0, 1], 8091).into();
 
-    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+                    loop {
+                        let (stream, _) = listener.accept().await.unwrap();
 
-    loop {
-        let (stream, _) = listener.accept().await?;
+                        let acceptor = tls_acceptor.clone();
 
-        let acceptor = tls_acceptor.clone();
+                        // This is the `Service` that will handle the connection.
+                        // returns a Response into a `Service`.
+                        let service =
+                            service_fn(move |req| proxy_handler::proxy_handler(req, target_addr));
 
-        // This is the `Service` that will handle the connection.
-        // `service_fn` is a helper to convert a function that
-        // returns a Response into a `Service`.
-        let service = service_fn(move |req| proxy_handler::proxy_handler(req, target_addr_clone));
-
-        tokio::task::spawn(async move {
-            let stream = match acceptor.accept(stream).await {
-                Ok(stream) => stream,
-                Err(err) => {
-                    eprintln!("failed to perform tls handshake: {err:#}");
-                    return;
+                        tokio::task::spawn(async move {
+                            let stream = match acceptor.accept(stream).await {
+                                Ok(stream) => stream,
+                                Err(err) => {
+                                    eprintln!("failed to perform tls handshake: {err:#}");
+                                    return;
+                                }
+                            };
+                            if let Err(err) = Builder::new(TokioExecutor::new())
+                                .serve_connection(TokioIo::new(stream), service)
+                                .await
+                            {
+                                eprintln!("failed to serve connection: {err:#}");
+                            }
+                        });
+                    }
                 }
-            };
-            if let Err(err) = Builder::new(TokioExecutor::new())
-                .serve_connection(TokioIo::new(stream), service)
-                .await
-            {
-                eprintln!("failed to serve connection: {err:#}");
+                // Otherwise, create a default server for http.
+                None => {
+                    // TEST ! TO remove !
+                    let target_addr: SocketAddr = ([127, 0, 0, 1], 8091).into();
+
+                    loop {
+                        let (stream, _) = listener.accept().await.unwrap();
+                        let service =
+                            service_fn(move |req| proxy_handler::proxy_handler(req, target_addr));
+                        if let Err(err) = Builder::new(TokioExecutor::new())
+                            .serve_connection(TokioIo::new(stream), service)
+                            .await
+                        {
+                            eprintln!("failed to serve connection: {err:#}");
+                        }
+                    }
+                }
             }
-        });
+        };
+
+        // Add the server to the list.
+        servers.push(service);
     }
+
+    // Start all the servers.
+    join_all(servers).await;
+
+    Ok(())
 }
 
 // Load public certificate from file.
