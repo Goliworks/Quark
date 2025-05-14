@@ -114,12 +114,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (stream, _) = listener.accept().await.unwrap();
                     let service =
                         service_fn(move |req| proxy_handler::proxy_handler(req, targets.clone()));
-                    if let Err(err) = Builder::new(TokioExecutor::new())
-                        .serve_connection(TokioIo::new(stream), service)
-                        .await
-                    {
-                        eprintln!("failed to serve connection: {err:#}");
-                    }
+                    tokio::task::spawn(async move {
+                        if let Err(err) = Builder::new(TokioExecutor::new())
+                            .serve_connection(TokioIo::new(stream), service)
+                            .await
+                        {
+                            eprintln!("failed to serve connection: {err:#}");
+                        }
+                    });
                 },
             }
         };
