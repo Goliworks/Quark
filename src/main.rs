@@ -57,6 +57,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let server_addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
+        let targets = Arc::new(server.targets);
+
         let service = async move {
             let listener = TcpListener::bind(server_addr).await.unwrap();
 
@@ -76,18 +78,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
-                    // TEST ! TO remove !
-                    let target_addr: SocketAddr = ([127, 0, 0, 1], 8091).into();
-
                     loop {
                         let (stream, _) = listener.accept().await.unwrap();
 
                         let acceptor = tls_acceptor.clone();
 
+                        let targets = Arc::clone(&targets);
+
                         // This is the `Service` that will handle the connection.
                         // returns a Response into a `Service`.
-                        let service =
-                            service_fn(move |req| proxy_handler::proxy_handler(req, target_addr));
+                        let service = service_fn(move |req| {
+                            proxy_handler::proxy_handler(req, targets.clone())
+                        });
 
                         tokio::task::spawn(async move {
                             let stream = match acceptor.accept(stream).await {
@@ -107,22 +109,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 // Otherwise, create a default server for http.
-                None => {
-                    // TEST ! TO remove !
-                    let target_addr: SocketAddr = ([127, 0, 0, 1], 8091).into();
-
-                    loop {
-                        let (stream, _) = listener.accept().await.unwrap();
-                        let service =
-                            service_fn(move |req| proxy_handler::proxy_handler(req, target_addr));
-                        if let Err(err) = Builder::new(TokioExecutor::new())
-                            .serve_connection(TokioIo::new(stream), service)
-                            .await
-                        {
-                            eprintln!("failed to serve connection: {err:#}");
-                        }
+                None => loop {
+                    let targets = Arc::clone(&targets);
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let service =
+                        service_fn(move |req| proxy_handler::proxy_handler(req, targets.clone()));
+                    if let Err(err) = Builder::new(TokioExecutor::new())
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await
+                    {
+                        eprintln!("failed to serve connection: {err:#}");
                     }
-                }
+                },
             }
         };
 

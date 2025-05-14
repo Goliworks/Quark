@@ -1,22 +1,22 @@
 mod toml_model;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, net::SocketAddr};
 use toml_model::ConfigToml;
 
 const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ServiceConfig {
     pub servers: HashMap<u16, Server>, // Port -> Server
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Server {
-    pub targets: HashMap<String, String>, // Domain -> Location
+    pub targets: HashMap<String, SocketAddr>, // Domain -> Location
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TlsCertificate {
     pub cert: String,
     pub key: String,

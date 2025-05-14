@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, net::SocketAddr};
 
 use serde::Deserialize;
 
@@ -10,7 +10,7 @@ pub struct ConfigToml {
 #[derive(Debug, Deserialize)]
 pub struct Service {
     pub domain: String,
-    pub location: String,
+    pub location: SocketAddr,
     pub port: Option<u16>,
     pub tls: Option<Tls>,
 }
