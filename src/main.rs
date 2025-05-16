@@ -67,20 +67,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
                     // Temporary use the first certificate found. Need to implement SNI later.
-                    let certs = load_certs(&tls[0].cert).unwrap();
-                    let key = load_private_key(&tls[0].key).unwrap();
-
-                    let mut server_config = ServerConfig::builder()
-                        .with_no_client_auth()
-                        .with_single_cert(certs, key)
-                        .expect("Bad certificate/key");
-                    server_config.alpn_protocols =
-                        vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-
-                    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+                    //
+                    // let certs = load_certs(&tls[0].cert).unwrap();
+                    // let key = load_private_key(&tls[0].key).unwrap();
+                    //
+                    // let mut server_config = ServerConfig::builder()
+                    //     .with_no_client_auth()
+                    //     .with_single_cert(certs, key)
+                    //     .expect("Bad certificate/key");
+                    // server_config.alpn_protocols =
+                    //     vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
                     // Wip custom tls config.
-                    let _ = TlsConfig::new(&tls).get_tls_config();
+                    let mut tls_config = TlsConfig::new(&tls).get_tls_config();
+
+                    tls_config.alpn_protocols =
+                        vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+
+                    let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config));
 
                     loop {
                         let (stream, _) = listener.accept().await.unwrap();
