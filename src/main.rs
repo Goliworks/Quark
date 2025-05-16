@@ -5,10 +5,11 @@ use std::{
     fs::{self},
     io::{self},
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Condvar},
 };
 
 use ::futures::future::join_all;
+use config::tls::TlsConfig;
 use config::ServiceConfig;
 use hyper::service::service_fn;
 use hyper_util::{
@@ -77,6 +78,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+
+                    // Wip custom tls config.
+                    let _ = TlsConfig::new(&tls).get_tls_config();
 
                     loop {
                         let (stream, _) = listener.accept().await.unwrap();

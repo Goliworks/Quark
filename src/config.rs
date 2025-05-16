@@ -1,3 +1,4 @@
+pub mod tls;
 mod toml_model;
 use std::{collections::HashMap, fs, net::SocketAddr};
 use toml_model::ConfigToml;

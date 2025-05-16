@@ -15,3 +15,4 @@ rustls-pemfile = "2.2.0"
 toml = "0.8.22"
 serde = { version = "1.0", features = ["derive"] }
 futures = "0.3.31"
+x509-parser = "0.17.0"
