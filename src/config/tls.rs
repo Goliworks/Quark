@@ -6,8 +6,7 @@ use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::ResolvesServerCertUsingSni;
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
-use rustls_pki_types::pem::PemObject;
-use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use x509_parser::parse_x509_certificate;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::{GeneralName, ParsedExtension, X509Certificate};
@@ -31,9 +30,12 @@ impl<'a> TlsConfig<'a> {
             self.add_certificate_to_resolver(cert, &mut resolver);
         }
 
-        let config_tls = ServerConfig::builder()
+        let mut config_tls = ServerConfig::builder()
             .with_no_client_auth()
             .with_cert_resolver(Arc::new(resolver));
+
+        config_tls.alpn_protocols =
+            vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
         config_tls
     }
@@ -46,12 +48,12 @@ impl<'a> TlsConfig<'a> {
         let cert_file = &mut BufReader::new(File::open(&cert.cert).unwrap());
         let cert_buffer = cert_file.fill_buf().unwrap();
 
-        let certt = load_certs(&cert.cert).unwrap();
+        let cert_der = load_certs(&cert.cert).unwrap();
         let key = load_private_key(&cert.key).unwrap();
 
         let key_sign = any_supported_type(&key).unwrap();
 
-        let ck = CertifiedKey::new(certt, key_sign);
+        let ck = CertifiedKey::new(cert_der, key_sign);
 
         let (_, pem) = parse_x509_pem(cert_buffer).unwrap();
 

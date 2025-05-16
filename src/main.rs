@@ -1,12 +1,7 @@
 mod config;
 mod proxy_handler;
 
-use std::{
-    fs::{self},
-    io::{self},
-    net::SocketAddr,
-    sync::{Arc, Condvar},
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
 use config::tls::TlsConfig;
@@ -15,10 +10,6 @@ use hyper::service::service_fn;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
-};
-use rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    ServerConfig,
 };
 use tokio::net::TcpListener;
 
@@ -31,10 +22,6 @@ struct Options {
     /// config file path.
     #[argh(option, short = 'c')]
     config: String,
-}
-
-fn error(err: String) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
 }
 
 #[tokio::main]
@@ -66,23 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match server.tls {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
-                    // Temporary use the first certificate found. Need to implement SNI later.
-                    //
-                    // let certs = load_certs(&tls[0].cert).unwrap();
-                    // let key = load_private_key(&tls[0].key).unwrap();
-                    //
-                    // let mut server_config = ServerConfig::builder()
-                    //     .with_no_client_auth()
-                    //     .with_single_cert(certs, key)
-                    //     .expect("Bad certificate/key");
-                    // server_config.alpn_protocols =
-                    //     vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
-
-                    // Wip custom tls config.
-                    let mut tls_config = TlsConfig::new(&tls).get_tls_config();
-
-                    tls_config.alpn_protocols =
-                        vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+                    // custom tls config.
+                    let tls_config = TlsConfig::new(&tls).get_tls_config();
 
                     let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config));
 
@@ -142,26 +114,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     join_all(servers).await;
 
     Ok(())
-}
-
-// Load public certificate from file.
-fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
-    // Open certificate file.
-    let certfile = fs::File::open(filename)
-        .map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
-    let mut reader = io::BufReader::new(certfile);
-
-    // Load and return certificate.
-    rustls_pemfile::certs(&mut reader).collect()
-}
-
-// Load private key from file.
-fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
-    // Open keyfile.
-    let keyfile = fs::File::open(filename)
-        .map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
-    let mut reader = io::BufReader::new(keyfile);
-
-    // Load and return a single private key.
-    rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
 }

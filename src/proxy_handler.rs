@@ -11,13 +11,21 @@ pub async fn proxy_handler(
     req: Request<Incoming>,
     targets: Arc<HashMap<String, SocketAddr>>,
 ) -> Result<Response<Incoming>, hyper_util::client::legacy::Error> {
+    let domain: &str;
+
+    // Use authority fot HTTP/2
+    if req.uri().authority().is_some() {
+        domain = req.uri().authority().unwrap().host();
+    } else {
+        domain = req.headers()["host"]
+            .to_str()
+            .unwrap()
+            .split(':')
+            .next()
+            .unwrap();
+    }
+
     // Get the domain (and remove port) from host.
-    let domain = req.headers()["host"]
-        .to_str()
-        .unwrap()
-        .split(':')
-        .next()
-        .unwrap();
 
     println!("{}", domain);
     println!("{:?}", targets);
