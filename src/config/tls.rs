@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 
 use rustls::crypto::aws_lc_rs::sign::any_supported_type;
-use rustls::server::ResolvesServerCertUsingSni;
+use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
@@ -23,7 +24,7 @@ impl<'a> TlsConfig<'a> {
     }
 
     pub fn get_tls_config(&self) -> ServerConfig {
-        let mut resolver = ResolvesServerCertUsingSni::new(); // println!("{:?}", x509_cert);
+        let mut resolver = SniCertResolver::new(); // println!("{:?}", x509_cert);
 
         for cert in self.certs.iter() {
             println!("{}", cert.cert);
@@ -40,11 +41,7 @@ impl<'a> TlsConfig<'a> {
         config_tls
     }
 
-    fn add_certificate_to_resolver(
-        &self,
-        cert: &TlsCertificate,
-        resolver: &mut ResolvesServerCertUsingSni,
-    ) {
+    fn add_certificate_to_resolver(&self, cert: &TlsCertificate, resolver: &mut SniCertResolver) {
         let cert_file = &mut BufReader::new(File::open(&cert.cert).unwrap());
         let cert_buffer = cert_file.fill_buf().unwrap();
 
@@ -64,7 +61,7 @@ impl<'a> TlsConfig<'a> {
 
         domains.iter().for_each(|domain| {
             println!("Domain: {}", domain);
-            resolver.add(domain, ck.clone()).unwrap();
+            resolver.add(domain, ck.clone());
         })
     }
 
@@ -93,6 +90,41 @@ impl<'a> TlsConfig<'a> {
         domain_names
     }
 }
+
+// Custom SNI resolver.
+#[derive(Debug)]
+struct SniCertResolver {
+    certs: HashMap<String, Arc<CertifiedKey>>,
+}
+
+impl ResolvesServerCert for SniCertResolver {
+    fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
+        match client_hello.server_name() {
+            Some(server_name) => {
+                println!("SNI requested: {}", server_name);
+                self.certs.get(&server_name.to_string()).cloned()
+            }
+            None => {
+                println!("No SNI provided by client.");
+                None
+            }
+        }
+    }
+}
+
+impl SniCertResolver {
+    fn new() -> SniCertResolver {
+        SniCertResolver {
+            certs: HashMap::new(),
+        }
+    }
+
+    fn add(&mut self, domain: &str, ck: CertifiedKey) {
+        self.certs.insert(domain.to_string(), Arc::new(ck));
+    }
+}
+
+// Load certificates and keys from files.
 
 fn error(err: String) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
