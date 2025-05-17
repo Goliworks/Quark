@@ -13,7 +13,7 @@ pub async fn proxy_handler(
 ) -> Result<Response<Incoming>, hyper_util::client::legacy::Error> {
     let domain: &str;
 
-    // Use authority fot HTTP/2
+    // Use authority for HTTP/2
     if req.uri().authority().is_some() {
         domain = req.uri().authority().unwrap().host();
     } else {

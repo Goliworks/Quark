@@ -24,7 +24,7 @@ impl<'a> TlsConfig<'a> {
     }
 
     pub fn get_tls_config(&self) -> ServerConfig {
-        let mut resolver = SniCertResolver::new(); // println!("{:?}", x509_cert);
+        let mut resolver = SniCertResolver::new();
 
         for cert in self.certs.iter() {
             println!("{}", cert.cert);
@@ -74,10 +74,7 @@ impl<'a> TlsConfig<'a> {
                         match name {
                             GeneralName::DNSName(dnsn) => {
                                 println!("{}", dnsn);
-                                // avoid wildcard certificates.
-                                if !dnsn.starts_with("*.") {
-                                    domain_names.push(dnsn.to_string());
-                                }
+                                domain_names.push(dnsn.to_string());
                             }
                             _ => {}
                         }
@@ -99,16 +96,23 @@ struct SniCertResolver {
 
 impl ResolvesServerCert for SniCertResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        match client_hello.server_name() {
-            Some(server_name) => {
-                println!("SNI requested: {}", server_name);
-                self.certs.get(&server_name.to_string()).cloned()
+        if let Some(server_name) = client_hello.server_name() {
+            println!("SNI requested: {}", server_name);
+
+            if let Some(cert) = self.certs.get(&server_name.to_string()) {
+                println!("SNI resolved to: {}", server_name);
+                return Some(cert.clone());
             }
-            None => {
-                println!("No SNI provided by client.");
-                None
+
+            //  Try wildcards.
+            let wildcard_name = convert_to_wildcard(&server_name);
+            if let Some(cert) = self.certs.get(&wildcard_name) {
+                println!("SNI resolved to: {}", wildcard_name);
+                return Some(cert.clone());
             }
         }
+        println!("No SNI provided by client.");
+        None
     }
 }
 
@@ -122,6 +126,24 @@ impl SniCertResolver {
     fn add(&mut self, domain: &str, ck: CertifiedKey) {
         self.certs.insert(domain.to_string(), Arc::new(ck));
     }
+}
+
+fn convert_to_wildcard(server_name: &str) -> String {
+    let explode_name: Vec<&str> = server_name.split('.').collect();
+    let mut i = 0;
+    let wildcard_name: Vec<&str> = explode_name
+        .into_iter()
+        .map(|x| {
+            i += 1;
+            if i == 1 {
+                return "*";
+            } else {
+                return x;
+            }
+        })
+        .collect();
+
+    wildcard_name.join(".")
 }
 
 // Load certificates and keys from files.
