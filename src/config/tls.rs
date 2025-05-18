@@ -42,17 +42,15 @@ impl<'a> TlsConfig<'a> {
     }
 
     fn add_certificate_to_resolver(&self, cert: &TlsCertificate, resolver: &mut SniCertResolver) {
-        let cert_file = &mut BufReader::new(File::open(&cert.cert).unwrap());
-        let cert_buffer = cert_file.fill_buf().unwrap();
-
         let cert_der = load_certs(&cert.cert).unwrap();
+        let cert_buffer = load_cert_buffer(&cert.cert);
         let key = load_private_key(&cert.key).unwrap();
 
         let key_sign = any_supported_type(&key).unwrap();
 
         let ck = CertifiedKey::new(cert_der, key_sign);
 
-        let (_, pem) = parse_x509_pem(cert_buffer).unwrap();
+        let (_, pem) = parse_x509_pem(&cert_buffer).unwrap();
 
         let domains: Vec<String> = match parse_x509_certificate(&pem.contents) {
             Ok((_, x509_cert)) => self.extract_domains_from_x509(&x509_cert),
@@ -172,4 +170,12 @@ fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
 
     // Load and return a single private key.
     rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
+}
+
+fn load_cert_buffer(filename: &str) -> Vec<u8> {
+    let certfile = File::open(filename).unwrap();
+    let mut reader = BufReader::new(certfile);
+    let buffer = reader.fill_buf().unwrap();
+
+    buffer.to_vec()
 }
