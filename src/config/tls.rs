@@ -130,7 +130,7 @@ impl SniCertResolver {
 
 fn convert_to_wildcard(server_name: &str) -> String {
     let explode_name: Vec<&str> = server_name.split('.').collect();
-    let mut i = 0;
+    let mut i: u8 = 0;
     let wildcard_name: Vec<&str> = explode_name
         .into_iter()
         .map(|x| {

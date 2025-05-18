@@ -17,7 +17,7 @@ pub struct Server {
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TlsCertificate {
     pub cert: String,
     pub key: String,
@@ -43,10 +43,20 @@ impl ServiceConfig {
                     server_tls
                         .targets
                         .insert(service.domain.clone(), service.location.clone());
-                    server_tls.tls.as_mut().unwrap().push(TlsCertificate {
+
+                    // Create a struct with the found certificates.
+                    let tls_cert = TlsCertificate {
                         cert: tls.certificate,
                         key: tls.key,
-                    });
+                    };
+
+                    // Check if the certificate is already in the list.
+                    if let Some(tls) = &mut server_tls.tls {
+                        if !tls.contains(&tls_cert) {
+                            // Add the certificate to the list.
+                            tls.push(tls_cert);
+                        }
+                    }
                 }
                 None => {}
             }
