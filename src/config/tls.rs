@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
 use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
@@ -59,7 +60,7 @@ impl<'a> TlsConfig<'a> {
 
         domains.iter().for_each(|domain| {
             println!("Domain: {}", domain);
-            resolver.add(domain, ck.clone());
+            resolver.add(domain, Arc::new(ck.clone()));
         })
     }
 
@@ -89,7 +90,7 @@ impl<'a> TlsConfig<'a> {
 // Custom SNI resolver.
 #[derive(Debug)]
 struct SniCertResolver {
-    certs: HashMap<String, Arc<CertifiedKey>>,
+    certs: HashMap<String, ArcSwap<CertifiedKey>>,
 }
 
 impl ResolvesServerCert for SniCertResolver {
@@ -99,14 +100,14 @@ impl ResolvesServerCert for SniCertResolver {
 
             if let Some(cert) = self.certs.get(&server_name.to_string()) {
                 println!("SNI resolved to: {}", server_name);
-                return Some(cert.clone());
+                return Some(cert.load_full());
             }
 
             //  Try wildcards.
             let wildcard_name = convert_to_wildcard(&server_name);
             if let Some(cert) = self.certs.get(&wildcard_name) {
                 println!("SNI resolved to: {}", wildcard_name);
-                return Some(cert.clone());
+                return Some(cert.load_full());
             }
         }
         println!("No SNI provided by client.");
@@ -121,8 +122,9 @@ impl SniCertResolver {
         }
     }
 
-    fn add(&mut self, domain: &str, ck: CertifiedKey) {
-        self.certs.insert(domain.to_string(), Arc::new(ck));
+    fn add(&mut self, domain: &str, ck: Arc<CertifiedKey>) {
+        self.certs
+            .insert(domain.to_string(), ArcSwap::new(ck.clone()));
     }
 }
 
