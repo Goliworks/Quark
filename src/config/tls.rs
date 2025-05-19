@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use futures::{SinkExt, StreamExt};
-use notify::{RecommendedWatcher, Watcher};
+use notify::event::{AccessKind, AccessMode};
+use notify::{EventKind, RecommendedWatcher, Watcher};
 use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
@@ -36,8 +37,6 @@ impl TlsConfig {
     }
 
     pub fn get_ck(&mut self) -> CertifiedKeyList {
-        // let mut resolver = SniCertResolver::new();
-
         let mut ck_list: CertifiedKeyList = HashMap::new();
 
         for cert in self.certs.iter() {
@@ -70,7 +69,6 @@ impl TlsConfig {
     pub async fn watch_certs(&self, ck_list: Arc<CertifiedKeyList>) {
         // Start to watch for certificates changes.
         println!("Paths to watch: {:?}\n", self.paths_to_watch);
-        println!("CertifiedKeyList: {:?}\n", ck_list);
 
         let (mut tx, mut rx) = channel(1);
 
@@ -88,7 +86,17 @@ impl TlsConfig {
 
         while let Some(res) = rx.next().await {
             match res {
-                Ok(event) => println!("changed: {:?}", event),
+                Ok(event) => {
+                    // println!("changed: {:?}", event);
+                    if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
+                        println!("File changed: {}", event.paths[0].display());
+
+                        for cert in self.certs.iter() {
+                            self.reload_certificates(cert, &ck_list);
+                        }
+                    }
+                }
+
                 Err(e) => println!("watch error: {:?}", e),
             }
         }
@@ -111,9 +119,31 @@ impl TlsConfig {
         };
 
         domains.iter().for_each(|domain| {
-            println!("Domain: {}", domain);
             ck_list.insert(domain.to_string(), ArcSwap::new(ck.clone()));
         })
+    }
+
+    // Dirty duplication. To optimize!
+    fn reload_certificates(&self, cert: &TlsCertificate, ck_list: &CertifiedKeyList) {
+        let cert_der = load_certs(&cert.cert).unwrap();
+        let cert_buffer = load_cert_buffer(&cert.cert);
+        let key = load_private_key(&cert.key).unwrap();
+
+        let key_sign = any_supported_type(&key).unwrap();
+
+        let ck = Arc::new(CertifiedKey::new(cert_der, key_sign));
+
+        let (_, pem) = parse_x509_pem(&cert_buffer).unwrap();
+
+        let domains: Vec<String> = match parse_x509_certificate(&pem.contents) {
+            Ok((_, x509_cert)) => self.extract_domains_from_x509(&x509_cert),
+            Err(e) => panic!("{:?}", e),
+        };
+
+        domains.iter().for_each(|domain| {
+            let ack = ck_list.get(domain).unwrap();
+            ack.store(ck.clone());
+        });
     }
 
     fn extract_domains_from_x509(&self, x509: &X509Certificate) -> Vec<String> {
@@ -171,11 +201,6 @@ impl SniCertResolver {
     pub fn new(ck_list: Arc<CertifiedKeyList>) -> SniCertResolver {
         SniCertResolver { certs: ck_list }
     }
-
-    // fn add(&mut self, domain: &str, ck: Arc<CertifiedKey>) {
-    //     self.certs
-    //         .insert(domain.to_string(), ArcSwap::new(ck.clone()));
-    // }
 }
 
 fn convert_to_wildcard(server_name: &str) -> String {
