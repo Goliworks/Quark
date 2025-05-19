@@ -54,9 +54,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
                     // custom tls config.
-                    let tls_config = TlsConfig::new(&tls).get_tls_config();
+                    let mut tls_config = TlsConfig::new(tls);
 
-                    let tls_acceptor = TlsAcceptor::from(Arc::new(tls_config));
+                    let server_config = tls_config.get_tls_config();
+
+                    tokio::task::spawn(async move {
+                        tls_config.watch_certs().await;
+                    });
+
+                    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                     loop {
                         let (stream, _) = listener.accept().await.unwrap();

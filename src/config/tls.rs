@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use futures::{SinkExt, StreamExt};
+use notify::{RecommendedWatcher, Watcher};
 use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
@@ -13,24 +16,39 @@ use x509_parser::parse_x509_certificate;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::{GeneralName, ParsedExtension, X509Certificate};
 
+use futures::channel::mpsc::channel;
+
 use super::TlsCertificate;
 
-pub struct TlsConfig<'a> {
-    certs: &'a Vec<TlsCertificate>,
+pub struct TlsConfig {
+    certs: Vec<TlsCertificate>,
+    paths_to_watch: Vec<PathBuf>,
 }
 
-impl<'a> TlsConfig<'a> {
-    pub fn new(certs: &'a Vec<TlsCertificate>) -> TlsConfig<'a> {
-        TlsConfig { certs }
+impl TlsConfig {
+    pub fn new(certs: Vec<TlsCertificate>) -> TlsConfig {
+        TlsConfig {
+            certs,
+            paths_to_watch: Vec::new(),
+        }
     }
 
-    pub fn get_tls_config(&self) -> ServerConfig {
+    pub fn get_tls_config(&mut self) -> ServerConfig {
         let mut resolver = SniCertResolver::new();
+        // let mut paths_to_watch: Vec<PathBuf> = Vec::new();
 
         for cert in self.certs.iter() {
-            println!("{}", cert.cert);
+            let path = Path::new(&cert.cert);
+            let directory = path.parent().unwrap();
+            let pathbuf = directory.to_path_buf();
+            if !self.paths_to_watch.contains(&pathbuf) {
+                self.paths_to_watch.push(pathbuf);
+            }
+
             self.add_certificate_to_resolver(cert, &mut resolver);
         }
+
+        // Generate config.
 
         let mut config_tls = ServerConfig::builder()
             .with_no_client_auth()
@@ -40,6 +58,32 @@ impl<'a> TlsConfig<'a> {
             vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
 
         config_tls
+    }
+
+    pub async fn watch_certs(&self) {
+        // Start to watch for certificates changes.
+        println!("Paths to watch: {:?}\n", self.paths_to_watch);
+
+        let (mut tx, mut rx) = channel(1);
+
+        let mut watcher = RecommendedWatcher::new(
+            move |res| futures::executor::block_on(async { tx.send(res).await.unwrap() }),
+            notify::Config::default(),
+        )
+        .unwrap();
+
+        for path in &self.paths_to_watch {
+            watcher
+                .watch(path, notify::RecursiveMode::Recursive)
+                .unwrap();
+        }
+
+        while let Some(res) = rx.next().await {
+            match res {
+                Ok(event) => println!("changed: {:?}", event),
+                Err(e) => println!("watch error: {:?}", e),
+            }
+        }
     }
 
     fn add_certificate_to_resolver(&self, cert: &TlsCertificate, resolver: &mut SniCertResolver) {
