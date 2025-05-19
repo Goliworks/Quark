@@ -53,24 +53,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match server.tls {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
-                    // custom tls config.
+                    // Start the tls config.
                     let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls)));
-                    let ck_list = Arc::new(tls_config.lock().await.get_ck());
+                    let ck_list = {
+                        let mut guard = tls_config.lock().await;
+                        Arc::new(guard.get_certified_key_list())
+                    };
 
                     let tls_config_clone = Arc::clone(&tls_config);
                     let ck_list_clone = Arc::clone(&ck_list);
 
+                    // Start to watch for certificates changes.
                     tokio::task::spawn(async move {
-                        tls_config_clone
-                            .lock()
-                            .await
-                            .watch_certs(ck_list_clone)
-                            .await;
+                        let guard = tls_config_clone.lock().await;
+                        guard.watch_certs(ck_list_clone).await;
                     });
 
+                    // Generate the sni resolver pass it to the tls_config
+                    // to get the rustls server config.
                     let resolver = SniCertResolver::new(ck_list);
-                    let server_config = tls_config.lock().await.get_tls_config(resolver);
+                    let server_config = {
+                        let guard = tls_config.lock().await;
+                        guard.get_tls_config(resolver)
+                    };
 
+                    // Create the tls acceptor with the rustls server config.
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                     loop {

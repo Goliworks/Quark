@@ -36,7 +36,7 @@ impl TlsConfig {
         }
     }
 
-    pub fn get_ck(&mut self) -> CertifiedKeyList {
+    pub fn get_certified_key_list(&mut self) -> CertifiedKeyList {
         let mut ck_list: CertifiedKeyList = HashMap::new();
 
         for cert in self.certs.iter() {
@@ -53,9 +53,8 @@ impl TlsConfig {
         ck_list
     }
 
+    // Generate and return the rustls server config.
     pub fn get_tls_config(&self, resolver: SniCertResolver) -> ServerConfig {
-        // Generate config.
-
         let mut config_tls = ServerConfig::builder()
             .with_no_client_auth()
             .with_cert_resolver(Arc::new(resolver));
@@ -66,8 +65,9 @@ impl TlsConfig {
         config_tls
     }
 
+    // Start to watch for certificates changes.
+    // Run it in a separate task.
     pub async fn watch_certs(&self, ck_list: Arc<CertifiedKeyList>) {
-        // Start to watch for certificates changes.
         println!("Paths to watch: {:?}\n", self.paths_to_watch);
 
         let (mut tx, mut rx) = channel(1);
@@ -213,8 +213,6 @@ fn convert_to_wildcard(server_name: &str) -> String {
 
     wildcard_name.join(".")
 }
-
-// Load certificates and keys from files.
 
 fn error(err: String) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
