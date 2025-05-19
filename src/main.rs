@@ -4,7 +4,7 @@ mod proxy_handler;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use config::tls::TlsConfig;
+use config::tls::{SniCertResolver, TlsConfig};
 use config::ServiceConfig;
 use hyper::service::service_fn;
 use hyper_util::{
@@ -54,13 +54,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
                     // custom tls config.
-                    let mut tls_config = TlsConfig::new(tls);
+                    let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls)));
+                    let ck_list = Arc::new(tls_config.lock().await.get_ck());
 
-                    let server_config = tls_config.get_tls_config();
+                    let tls_config_clone = Arc::clone(&tls_config);
+                    let ck_list_clone = Arc::clone(&ck_list);
 
                     tokio::task::spawn(async move {
-                        tls_config.watch_certs().await;
+                        tls_config_clone
+                            .lock()
+                            .await
+                            .watch_certs(ck_list_clone)
+                            .await;
                     });
+
+                    let resolver = SniCertResolver::new(ck_list);
+                    let server_config = tls_config.lock().await.get_tls_config(resolver);
 
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
