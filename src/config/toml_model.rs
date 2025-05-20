@@ -20,4 +20,5 @@ pub struct Tls {
     pub certificate: String,
     pub key: String,
     pub port: Option<u16>,
+    pub redirection: Option<bool>,
 }

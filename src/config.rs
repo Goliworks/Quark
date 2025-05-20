@@ -3,8 +3,9 @@ mod toml_model;
 use std::{collections::HashMap, fs, net::SocketAddr};
 use toml_model::ConfigToml;
 
-const DEFAULT_PORT: u16 = 80;
+pub const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
+const DEFAULT_TLS_REDIRECTION: bool = true;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -13,8 +14,14 @@ pub struct ServiceConfig {
 
 #[derive(Debug, Clone)]
 pub struct Server {
-    pub targets: HashMap<String, SocketAddr>, // Domain -> Location
+    pub params: ServerParams,
     pub tls: Option<Vec<TlsCertificate>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServerParams {
+    pub targets: HashMap<String, SocketAddr>, // Domain -> Location
+    pub auto_tls: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,26 +35,33 @@ impl ServiceConfig {
         let config = get_toml_config(path);
 
         let mut servers: HashMap<u16, Server> = HashMap::new();
-        for (_, service) in config.services {
+        for (_, service) in &config.services {
             let port = service.port.unwrap_or(DEFAULT_PORT);
 
             // if service has TLS configuration, create a server for https.
-            match service.tls {
+
+            let mut tls_redirection = false;
+
+            match &service.tls {
                 Some(tls) => {
                     let port_tls = tls.port.unwrap_or(DEFAULT_PORT_TLS);
                     let server_tls = servers.entry(port_tls).or_insert(Server {
-                        targets: HashMap::new(),
+                        params: ServerParams {
+                            targets: HashMap::new(),
+                            auto_tls: None,
+                        },
                         tls: Some(Vec::new()),
                     });
 
                     server_tls
+                        .params
                         .targets
                         .insert(service.domain.clone(), service.location.clone());
 
                     // Create a struct with the found certificates.
                     let tls_cert = TlsCertificate {
-                        cert: tls.certificate,
-                        key: tls.key,
+                        cert: tls.certificate.clone(),
+                        key: tls.key.clone(),
                     };
 
                     // Check if the certificate is already in the list.
@@ -57,19 +71,43 @@ impl ServiceConfig {
                             tls.push(tls_cert);
                         }
                     }
+                    tls_redirection = tls.redirection.unwrap_or(DEFAULT_TLS_REDIRECTION);
                 }
                 None => {}
             }
 
-            // create a default server for http.
+            // Create a default server for http.
             let server = servers.entry(port).or_insert(Server {
-                targets: HashMap::new(),
+                params: ServerParams {
+                    targets: HashMap::new(),
+                    auto_tls: Some(Vec::new()),
+                },
                 tls: None,
             });
 
             server
+                .params
                 .targets
                 .insert(service.domain.clone(), service.location.clone());
+
+            // Define if a tls redirection should be done.
+            if tls_redirection {
+                let domain = service.domain.clone();
+                let port = service
+                    .tls
+                    .as_ref()
+                    .unwrap()
+                    .port
+                    .unwrap_or(DEFAULT_PORT_TLS);
+
+                let tls_domain = if port != DEFAULT_PORT_TLS {
+                    format!("{}:{}", domain, port)
+                } else {
+                    domain
+                };
+
+                server.params.auto_tls.as_mut().unwrap().push(tls_domain);
+            }
         }
 
         ServiceConfig { servers }
