@@ -101,8 +101,24 @@ pub async fn proxy_handler(
 
     let future = client.request(new_req);
 
-    future.await.and_then(|resp| {
+    let res = future.await.and_then(|resp| {
         let resp = resp.map(ProxyHandlerBody::Incoming);
         Ok(resp)
-    })
+    });
+
+    match res {
+        Ok(resp) => Ok(resp),
+        Err(err) => {
+            println!("Error: {:?}", err);
+            Ok(Response::builder()
+                .status(502)
+                .body(ProxyHandlerBody::Full(Full::from(
+                    "<div style='text-align:center; margin-top:100px;\
+                    font-family:Helvetica, sans-serif;'>\
+                    <div><h1>Error 502</h1>\
+                    <span>Bad gateway</span></div></div>",
+                )))
+                .unwrap())
+        }
+    }
 }
