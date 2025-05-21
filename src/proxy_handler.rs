@@ -82,16 +82,19 @@ pub async fn proxy_handler(
     }
 
     // Get the domain (and remove port) from host.
+    let domain_copy = domain.to_string();
     let target = params.targets.get(domain).unwrap();
     let uri_string = format!("http://{}{}", target, path);
-    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
-    let (parts, _body) = req.into_parts();
+    let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
+    let (parts, body) = req.into_parts();
+
+    println!("{} -> {}", domain_copy, uri_string);
 
     // Request the targeted server.
-    let mut new_req: Request<Full<Bytes>> = Request::builder()
+    let mut new_req: Request<Incoming> = Request::builder()
         .method(parts.method)
         .uri(uri_string)
-        .body(Full::from(""))
+        .body(body)
         .expect("request builder");
 
     *new_req.headers_mut() = parts.headers;
