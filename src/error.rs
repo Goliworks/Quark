@@ -13,13 +13,16 @@ pub fn gateway_timeout() -> Response<ProxyHandlerBody> {
 }
 
 fn error_builder(err: u16, msg: &str) -> Response<ProxyHandlerBody> {
+    let version = format!("{} v.{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     let text = format!(
         "<html>\
         <head><title>{err} {msg}</title></head>\
-        <body style='text-align: center; margin-top: 100px;\
+        <body style='text-align: center; margin-top: 50px;\
         font-family: sans-serif;'>\
         <h1> Error {err}</h1>\
-        <p>{msg}</p>\
+        <h4>{msg}</h4>\
+        <hr/>
+        <p>{version}</p>\
         </body>\
         </html>",
     );
@@ -29,4 +32,3 @@ fn error_builder(err: u16, msg: &str) -> Response<ProxyHandlerBody> {
         .body(ProxyHandlerBody::Full(Full::from(text)))
         .unwrap()
 }
-
