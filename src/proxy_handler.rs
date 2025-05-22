@@ -13,7 +13,7 @@ use hyper::{
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
 
-use crate::config::ServerParams;
+use crate::{config::ServerParams, error};
 
 pub enum ProxyHandlerBody {
     Incoming(hyper::body::Incoming),
@@ -98,43 +98,35 @@ pub async fn proxy_handler(
 
     let future = client.request(new_req);
 
+    // Embeding the future in a timeout.
+    // If the request is too long, return a 504 error.
     let pending_future = timeout(Duration::from_secs(10), future).await;
 
     let response: Result<Response<Incoming>, hyper_util::client::legacy::Error>;
     match pending_future {
+        // Use the response from the future.
         Ok(res) => {
             response = res;
         }
+        // Get the error from the timeout and return a 504 error.
         Err(err) => {
             println!("Error: {:?}", err);
-            return Ok(Response::builder()
-                .status(504)
-                .body(ProxyHandlerBody::Full(Full::from(
-                    "<div style='text-align:center; margin-top:100px;\
-                    font-family:Helvetica, sans-serif;'>\
-                    <div><h1>Error 504</h1>\
-                    <span>Gateway timeout</span></div></div>",
-                )))
-                .unwrap());
+            return Ok(error::gateway_timeout());
         }
     };
 
+    // Return the response from the request.
     match response {
+        // If the request succeeded, return the response.
+        // It's the data from the targeted server.
         Ok(res) => {
             let res = res.map(ProxyHandlerBody::Incoming);
             return Ok(res);
         }
+        // If the request failed, return a 502 error.
         Err(err) => {
             println!("Error: {:?}", err);
-            return Ok(Response::builder()
-                .status(502)
-                .body(ProxyHandlerBody::Full(Full::from(
-                    "<div style='text-align:center; margin-top:100px;\
-                    font-family:Helvetica, sans-serif;'>\
-                    <div><h1>Error 502</h1>\
-                    <span>Bad gateway</span></div></div>",
-                )))
-                .unwrap());
+            return Ok(error::bad_gateway());
         }
     };
 }
