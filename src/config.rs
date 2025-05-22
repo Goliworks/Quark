@@ -5,6 +5,7 @@ use toml_model::ConfigToml;
 
 pub const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
+const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct Server {
 pub struct ServerParams {
     pub targets: HashMap<String, SocketAddr>, // Domain -> Location
     pub auto_tls: Option<Vec<String>>,
+    pub proxy_timeout: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +51,7 @@ impl ServiceConfig {
                         params: ServerParams {
                             targets: HashMap::new(),
                             auto_tls: None,
+                            proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                         },
                         tls: Some(Vec::new()),
                     });
@@ -81,6 +84,7 @@ impl ServiceConfig {
                 params: ServerParams {
                     targets: HashMap::new(),
                     auto_tls: Some(Vec::new()),
+                    proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                 },
                 tls: None,
             });

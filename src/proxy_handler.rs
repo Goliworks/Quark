@@ -100,7 +100,7 @@ pub async fn proxy_handler(
 
     // Embeding the future in a timeout.
     // If the request is too long, return a 504 error.
-    let pending_future = timeout(Duration::from_secs(10), future).await;
+    let pending_future = timeout(Duration::from_secs(params.proxy_timeout), future).await;
 
     let response: Result<Response<Incoming>, hyper_util::client::legacy::Error>;
     match pending_future {

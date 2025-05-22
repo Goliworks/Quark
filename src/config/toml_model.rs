@@ -13,6 +13,7 @@ pub struct Service {
     pub location: SocketAddr,
     pub port: Option<u16>,
     pub tls: Option<Tls>,
+    pub proxy_timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
