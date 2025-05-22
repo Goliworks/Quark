@@ -2,6 +2,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use http_body_util::Full;
@@ -10,6 +11,7 @@ use hyper::{
     Request, Response,
 };
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use tokio::time::timeout;
 
 use crate::config::ServerParams;
 
@@ -61,11 +63,6 @@ pub async fn proxy_handler(
     // Get the path from the request.
     let path = req.uri().path_and_query().unwrap().path();
 
-    // return Ok(Response::builder()
-    //     .status(200)
-    //     .body(ProxyHandlerBody::Full(Full::from("aaaaaaa")))
-    //     .unwrap());
-
     // Redirect to HTTPS if the server has TLS configuration.
     if let Some(dom) = params
         .auto_tls
@@ -101,16 +98,35 @@ pub async fn proxy_handler(
 
     let future = client.request(new_req);
 
-    let res = future.await.and_then(|resp| {
-        let resp = resp.map(ProxyHandlerBody::Incoming);
-        Ok(resp)
-    });
+    let pending_future = timeout(Duration::from_secs(10), future).await;
 
-    match res {
-        Ok(resp) => Ok(resp),
+    let response: Result<Response<Incoming>, hyper_util::client::legacy::Error>;
+    match pending_future {
+        Ok(res) => {
+            response = res;
+        }
         Err(err) => {
             println!("Error: {:?}", err);
-            Ok(Response::builder()
+            return Ok(Response::builder()
+                .status(504)
+                .body(ProxyHandlerBody::Full(Full::from(
+                    "<div style='text-align:center; margin-top:100px;\
+                    font-family:Helvetica, sans-serif;'>\
+                    <div><h1>Error 504</h1>\
+                    <span>Gateway timeout</span></div></div>",
+                )))
+                .unwrap());
+        }
+    };
+
+    match response {
+        Ok(res) => {
+            let res = res.map(ProxyHandlerBody::Incoming);
+            return Ok(res);
+        }
+        Err(err) => {
+            println!("Error: {:?}", err);
+            return Ok(Response::builder()
                 .status(502)
                 .body(ProxyHandlerBody::Full(Full::from(
                     "<div style='text-align:center; margin-top:100px;\
@@ -118,7 +134,7 @@ pub async fn proxy_handler(
                     <div><h1>Error 502</h1>\
                     <span>Bad gateway</span></div></div>",
                 )))
-                .unwrap())
+                .unwrap());
         }
-    }
+    };
 }
