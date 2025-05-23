@@ -47,7 +47,7 @@ impl TlsConfig {
                 self.paths_to_watch.push(pathbuf);
             }
 
-            self.add_certificate_to_resolver(cert, &mut ck_list);
+            self.add_certificate_to_certified_key_list(cert, &mut ck_list);
         }
 
         ck_list
@@ -102,7 +102,11 @@ impl TlsConfig {
         }
     }
 
-    fn add_certificate_to_resolver(&self, cert: &TlsCertificate, ck_list: &mut CertifiedKeyList) {
+    fn add_certificate_to_certified_key_list(
+        &self,
+        cert: &TlsCertificate,
+        ck_list: &mut CertifiedKeyList,
+    ) {
         let (domains, ck) = self.get_domains_and_ck(cert);
 
         domains.iter().for_each(|domain| {

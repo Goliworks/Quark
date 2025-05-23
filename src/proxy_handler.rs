@@ -72,7 +72,7 @@ pub async fn proxy_handler(
         .find(|x| x.starts_with(&domain.to_string()))
     {
         return Ok(Response::builder()
-            .status(302)
+            .status(301)
             .header("Location", format!("https://{}{}", dom, path))
             .body(ProxyHandlerBody::Empty)
             .unwrap());
