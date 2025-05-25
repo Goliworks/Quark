@@ -78,6 +78,18 @@ pub async fn proxy_handler(
             .unwrap());
     }
 
+    // Check for redirections.
+    if let Some(redirection) = params
+        .redirections
+        .get(format!("{}{}", domain, path).as_str())
+    {
+        return Ok(Response::builder()
+            .status(302)
+            .header("Location", redirection)
+            .body(ProxyHandlerBody::Empty)
+            .unwrap());
+    }
+
     // Get the domain (and remove port) from host.
     let domain_copy = domain.to_string();
     let uri_string =
