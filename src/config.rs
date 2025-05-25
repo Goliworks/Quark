@@ -3,6 +3,8 @@ mod toml_model;
 use std::{collections::HashMap, fs, net::SocketAddr};
 use toml_model::ConfigToml;
 
+use crate::utils;
+
 pub const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
@@ -21,7 +23,7 @@ pub struct Server {
 
 #[derive(Debug, Clone)]
 pub struct ServerParams {
-    pub targets: HashMap<String, SocketAddr>, // Domain -> Location
+    pub targets: HashMap<String, String>, // Domain -> Location
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -56,10 +58,22 @@ impl ServiceConfig {
                         tls: Some(Vec::new()),
                     });
 
-                    server_tls
-                        .params
-                        .targets
-                        .insert(service.domain.clone(), service.location.clone());
+                    // server_tls
+                    //     .params
+                    //     .targets
+                    //     .insert(service.domain.clone(), service.location.clone());
+
+                    // Other locations
+                    if let Some(locations) = &service.locations {
+                        for location in locations {
+                            // Remove last /
+                            let source = utils::remove_last_slash(&location.source);
+                            server_tls.params.targets.insert(
+                                format!("{}{}", service.domain.clone(), source),
+                                location.target.clone(),
+                            );
+                        }
+                    }
 
                     // Create a struct with the found certificates.
                     let tls_cert = TlsCertificate {
@@ -89,10 +103,21 @@ impl ServiceConfig {
                 tls: None,
             });
 
-            server
-                .params
-                .targets
-                .insert(service.domain.clone(), service.location.clone());
+            // server
+            //     .params
+            //     .targets
+            //     .insert(service.domain.clone(), service.location.clone());
+
+            // Other locations
+            if let Some(locations) = &service.locations {
+                for location in locations {
+                    let source = utils::remove_last_slash(&location.source);
+                    server.params.targets.insert(
+                        format!("{}{}", service.domain.clone(), source),
+                        location.target.clone(),
+                    );
+                }
+            }
 
             // Define if a tls redirection should be done.
             if tls_redirection {

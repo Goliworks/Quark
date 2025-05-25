@@ -13,7 +13,7 @@ use hyper::{
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
 
-use crate::{config::ServerParams, error};
+use crate::{config::ServerParams, error, utils};
 
 pub enum ProxyHandlerBody {
     Incoming(hyper::body::Incoming),
@@ -61,7 +61,7 @@ pub async fn proxy_handler(
             .unwrap()
     };
     // Get the path from the request.
-    let path = req.uri().path_and_query().unwrap().path();
+    let path = utils::remove_last_slash(req.uri().path_and_query().unwrap().path());
 
     // Redirect to HTTPS if the server has TLS configuration.
     if let Some(dom) = params
@@ -80,8 +80,14 @@ pub async fn proxy_handler(
 
     // Get the domain (and remove port) from host.
     let domain_copy = domain.to_string();
-    let target = params.targets.get(domain).unwrap();
-    let uri_string = format!("http://{}{}", target, path);
+    let uri_string =
+        if let Some(target) = params.targets.get(format!("{}{}", domain, path).as_str()) {
+            target
+        } else {
+            let target = params.targets.get(domain).unwrap();
+            &format!("{}{}", target, path)
+        };
+    // let uri_string = format!("{}{}", target, path);
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     let (parts, body) = req.into_parts();
 
