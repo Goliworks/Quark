@@ -60,33 +60,7 @@ impl ServiceConfig {
                         tls: Some(Vec::new()),
                     });
 
-                    // server_tls
-                    //     .params
-                    //     .targets
-                    //     .insert(service.domain.clone(), service.location.clone());
-
-                    // Other locations
-                    if let Some(locations) = &service.locations {
-                        for location in locations {
-                            // Remove last /
-                            let source = utils::remove_last_slash(&location.source);
-                            server_tls.params.targets.insert(
-                                format!("{}{}", service.domain.clone(), source),
-                                location.target.clone(),
-                            );
-                        }
-                    }
-                    // Redirections.
-                    if let Some(redirections) = &service.redirections {
-                        for red in redirections {
-                            // Remove last /
-                            let source = utils::remove_last_slash(&red.source);
-                            server_tls.params.redirections.insert(
-                                format!("{}{}", service.domain.clone(), source),
-                                red.target.clone(),
-                            );
-                        }
-                    }
+                    manage_locations_and_redirections(server_tls, service);
 
                     // Create a struct with the found certificates.
                     let tls_cert = TlsCertificate {
@@ -117,32 +91,7 @@ impl ServiceConfig {
                 tls: None,
             });
 
-            // server
-            //     .params
-            //     .targets
-            //     .insert(service.domain.clone(), service.location.clone());
-
-            // Other locations
-            if let Some(locations) = &service.locations {
-                for location in locations {
-                    let source = utils::remove_last_slash(&location.source);
-                    server.params.targets.insert(
-                        format!("{}{}", service.domain.clone(), source),
-                        location.target.clone(),
-                    );
-                }
-            }
-            // Redirections.
-            if let Some(redirections) = &service.redirections {
-                for red in redirections {
-                    // Remove last /
-                    let source = utils::remove_last_slash(&red.source);
-                    server.params.redirections.insert(
-                        format!("{}{}", service.domain.clone(), source),
-                        red.target.clone(),
-                    );
-                }
-            }
+            manage_locations_and_redirections(server, service);
 
             // Define if a tls redirection should be done.
             if tls_redirection {
@@ -175,4 +124,34 @@ pub fn get_toml_config(path: String) -> ConfigToml {
     });
     println!("{:?}", config);
     config
+}
+
+pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::Service) {
+    // server_tls
+    //     .params
+    //     .targets
+    //     .insert(service.domain.clone(), service.location.clone());
+
+    // Other locations
+    if let Some(locations) = &service.locations {
+        for location in locations {
+            // Remove last /
+            let source = utils::remove_last_slash(&location.source);
+            server.params.targets.insert(
+                format!("{}{}", service.domain.clone(), source),
+                location.target.clone(),
+            );
+        }
+    }
+    // Redirections.
+    if let Some(redirections) = &service.redirections {
+        for red in redirections {
+            // Remove last /
+            let source = utils::remove_last_slash(&red.source);
+            server.params.redirections.insert(
+                format!("{}{}", service.domain.clone(), source),
+                red.target.clone(),
+            );
+        }
+    }
 }
