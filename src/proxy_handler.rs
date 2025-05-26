@@ -91,45 +91,49 @@ pub async fn proxy_handler(
     }
 
     // Get the domain (and remove port) from host.
-    let domain_copy = domain.to_string();
 
     let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
 
-    let uri_string = match params.targets.get(match_url.as_str()) {
+    let uri_string: Result<String, _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
-        Some(target) => target.location.clone(),
+        Some(target) => Ok(target.location.clone()),
         // If no strict match, check for a match with the path.
         None => {
-            let target = params.targets.get(domain).unwrap();
-            let mut uri = format!("{}{}", target.location, path);
+            let mut uri_path: Option<String> = None;
             for (url, target) in params.targets.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                     println!("(!) {} has matched with {}", url, match_url);
+                    println!("Req path {}", path);
                     let new_path = match_url.strip_prefix(url);
-                    uri = format!(
+                    println!("New path {}", new_path.unwrap());
+                    uri_path = Some(format!(
                         "{}{}",
                         utils::remove_last_slash(&target.location),
                         new_path.unwrap()
-                    );
+                    ));
                     break;
                 }
             }
-            uri
+
+            match uri_path {
+                Some(uri) => Ok(uri),
+                None => Err(()),
+            }
         }
     };
 
-    // let uri_string = format!("{}{}", target, path);
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     let (parts, body) = req.into_parts();
 
-    println!("{} -> {}", domain_copy, uri_string);
-
     // Request the targeted server.
-    let mut new_req: Request<Incoming> = Request::builder()
-        .method(parts.method)
-        .uri(uri_string)
-        .body(body)
-        .expect("request builder");
+    let mut new_req: Request<Incoming> = match uri_string {
+        Ok(uri) => Request::builder()
+            .method(parts.method)
+            .uri(uri)
+            .body(body)
+            .expect("request builder"),
+        Err(_) => return Ok(error::internal_server_error()),
+    };
 
     *new_req.headers_mut() = parts.headers;
 

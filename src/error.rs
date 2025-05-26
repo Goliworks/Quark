@@ -4,6 +4,10 @@ use hyper::Response;
 
 use crate::proxy_handler::ProxyHandlerBody;
 
+pub fn internal_server_error() -> Response<ProxyHandlerBody> {
+    error_builder(500, "Internal server error")
+}
+
 pub fn bad_gateway() -> Response<ProxyHandlerBody> {
     error_builder(502, "Bad gateway")
 }
