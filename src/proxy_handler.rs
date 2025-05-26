@@ -79,20 +79,45 @@ pub async fn proxy_handler(
     }
 
     // Check for redirections.
-    if let Some(redirection) = params
-        .redirections
-        .get(format!("{}{}", domain, utils::remove_last_slash(path)).as_str())
-    {
-        return Ok(Response::builder()
-            .status(302)
-            .header("Location", redirection)
-            .body(ProxyHandlerBody::Empty)
-            .unwrap());
+
+    let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
+
+    match params.redirections.get(match_url.as_str()) {
+        Some(redirection) => {
+            return Ok(Response::builder()
+                .status(302)
+                .header("Location", redirection.location.clone())
+                .body(ProxyHandlerBody::Empty)
+                .unwrap());
+        }
+        None => {
+            let mut uri_path: Option<String> = None;
+            for (url, target) in params.redirections.iter().rev() {
+                if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                    println!("(!) {} has matched with {}", url, match_url);
+                    println!("Req path {}", path);
+                    let new_path = match_url.strip_prefix(url);
+                    println!("New path {}", new_path.unwrap());
+                    uri_path = Some(format!(
+                        "{}{}",
+                        utils::remove_last_slash(&target.location),
+                        new_path.unwrap()
+                    ));
+                    break;
+                }
+            }
+
+            if let Some(uri) = uri_path {
+                return Ok(Response::builder()
+                    .status(302)
+                    .header("Location", uri)
+                    .body(ProxyHandlerBody::Empty)
+                    .unwrap());
+            }
+        }
     }
 
     // Get the domain (and remove port) from host.
-
-    let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
 
     let uri_string: Result<String, _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.

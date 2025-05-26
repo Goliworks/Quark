@@ -28,8 +28,8 @@ pub struct Server {
 
 #[derive(Debug, Clone)]
 pub struct ServerParams {
-    pub targets: BTreeMap<String, Target>,     // Domain -> Location
-    pub redirections: HashMap<String, String>, // Domain -> redirection
+    pub targets: BTreeMap<String, Target>, // Domain -> Location
+    pub redirections: BTreeMap<String, Target>, // Domain -> redirection
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -64,7 +64,7 @@ impl ServiceConfig {
                     let server_tls = servers.entry(port_tls).or_insert(Server {
                         params: ServerParams {
                             targets: BTreeMap::new(),
-                            redirections: HashMap::new(),
+                            redirections: BTreeMap::new(),
                             auto_tls: None,
                             proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                         },
@@ -95,7 +95,7 @@ impl ServiceConfig {
             let server = servers.entry(port).or_insert(Server {
                 params: ServerParams {
                     targets: BTreeMap::new(),
-                    redirections: HashMap::new(),
+                    redirections: BTreeMap::new(),
                     auto_tls: Some(Vec::new()),
                     proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                 },
@@ -164,7 +164,10 @@ pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_mod
             let source = utils::remove_last_slash(&red.source);
             server.params.redirections.insert(
                 format!("{}{}", service.domain.clone(), source),
-                red.target.clone(),
+                Target {
+                    location: red.target.clone(),
+                    strict_uri: red.strict.unwrap_or(DEFAULT_STRICT_URI),
+                },
             );
         }
     }

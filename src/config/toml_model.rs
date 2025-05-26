@@ -37,4 +37,5 @@ pub struct Locations {
 pub struct Redirections {
     pub source: String,
     pub target: String,
+    pub strict: Option<bool>,
 }
