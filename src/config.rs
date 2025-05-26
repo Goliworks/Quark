@@ -1,6 +1,10 @@
 pub mod tls;
 mod toml_model;
-use std::{collections::HashMap, fs, net::SocketAddr};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    net::SocketAddr,
+};
 use toml_model::ConfigToml;
 
 use crate::utils;
@@ -9,6 +13,7 @@ pub const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
+const DEFAULT_STRICT_URI: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -23,7 +28,7 @@ pub struct Server {
 
 #[derive(Debug, Clone)]
 pub struct ServerParams {
-    pub targets: HashMap<String, String>,      // Domain -> Location
+    pub targets: BTreeMap<String, Target>,     // Domain -> Location
     pub redirections: HashMap<String, String>, // Domain -> redirection
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
@@ -33,6 +38,12 @@ pub struct ServerParams {
 pub struct TlsCertificate {
     pub cert: String,
     pub key: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Target {
+    pub location: String,
+    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
 }
 
 impl ServiceConfig {
@@ -52,7 +63,7 @@ impl ServiceConfig {
                     let port_tls = tls.port.unwrap_or(DEFAULT_PORT_TLS);
                     let server_tls = servers.entry(port_tls).or_insert(Server {
                         params: ServerParams {
-                            targets: HashMap::new(),
+                            targets: BTreeMap::new(),
                             redirections: HashMap::new(),
                             auto_tls: None,
                             proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
@@ -83,7 +94,7 @@ impl ServiceConfig {
             // Create a default server for http.
             let server = servers.entry(port).or_insert(Server {
                 params: ServerParams {
-                    targets: HashMap::new(),
+                    targets: BTreeMap::new(),
                     redirections: HashMap::new(),
                     auto_tls: Some(Vec::new()),
                     proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
@@ -139,7 +150,10 @@ pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_mod
             let source = utils::remove_last_slash(&location.source);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
-                location.target.clone(),
+                Target {
+                    location: location.target.clone(),
+                    strict_uri: location.strict.unwrap_or(DEFAULT_STRICT_URI),
+                },
             );
         }
     }

@@ -30,7 +30,7 @@ pub struct Tls {
 pub struct Locations {
     pub source: String,
     pub target: String,
-    pub kind: Option<String>,
+    pub strict: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

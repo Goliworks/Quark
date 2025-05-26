@@ -92,15 +92,32 @@ pub async fn proxy_handler(
 
     // Get the domain (and remove port) from host.
     let domain_copy = domain.to_string();
-    let uri_string = if let Some(target) = params
-        .targets
-        .get(format!("{}{}", domain, utils::remove_last_slash(path)).as_str())
-    {
-        target
-    } else {
-        let target = params.targets.get(domain).unwrap();
-        &format!("{}{}", target, path)
+
+    let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
+
+    let uri_string = match params.targets.get(match_url.as_str()) {
+        // First, check for a strict match.
+        Some(target) => target.location.clone(),
+        // If no strict match, check for a match with the path.
+        None => {
+            let target = params.targets.get(domain).unwrap();
+            let mut uri = format!("{}{}", target.location, path);
+            for (url, target) in params.targets.iter().rev() {
+                if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                    println!("(!) {} has matched with {}", url, match_url);
+                    let new_path = match_url.strip_prefix(url);
+                    uri = format!(
+                        "{}{}",
+                        utils::remove_last_slash(&target.location),
+                        new_path.unwrap()
+                    );
+                    break;
+                }
+            }
+            uri
+        }
     };
+
     // let uri_string = format!("{}{}", target, path);
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     let (parts, body) = req.into_parts();
