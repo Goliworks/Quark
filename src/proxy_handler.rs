@@ -61,7 +61,7 @@ pub async fn proxy_handler(
             .unwrap()
     };
     // Get the path from the request.
-    let path = utils::remove_last_slash(req.uri().path_and_query().unwrap().path());
+    let path = req.uri().path_and_query().unwrap().path();
 
     // Redirect to HTTPS if the server has TLS configuration.
     if let Some(dom) = params
@@ -81,7 +81,7 @@ pub async fn proxy_handler(
     // Check for redirections.
     if let Some(redirection) = params
         .redirections
-        .get(format!("{}{}", domain, path).as_str())
+        .get(format!("{}{}", domain, utils::remove_last_slash(path)).as_str())
     {
         return Ok(Response::builder()
             .status(302)
@@ -92,13 +92,15 @@ pub async fn proxy_handler(
 
     // Get the domain (and remove port) from host.
     let domain_copy = domain.to_string();
-    let uri_string =
-        if let Some(target) = params.targets.get(format!("{}{}", domain, path).as_str()) {
-            target
-        } else {
-            let target = params.targets.get(domain).unwrap();
-            &format!("{}{}", target, path)
-        };
+    let uri_string = if let Some(target) = params
+        .targets
+        .get(format!("{}{}", domain, utils::remove_last_slash(path)).as_str())
+    {
+        target
+    } else {
+        let target = params.targets.get(domain).unwrap();
+        &format!("{}{}", target, path)
+    };
     // let uri_string = format!("{}{}", target, path);
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     let (parts, body) = req.into_parts();
