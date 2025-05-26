@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::collections::HashMap;
 
 use serde::Deserialize;
 
@@ -38,4 +38,5 @@ pub struct Redirections {
     pub source: String,
     pub target: String,
     pub strict: Option<bool>,
+    pub temporary: Option<bool>,
 }

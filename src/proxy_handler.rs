@@ -85,13 +85,14 @@ pub async fn proxy_handler(
     match params.redirections.get(match_url.as_str()) {
         Some(redirection) => {
             return Ok(Response::builder()
-                .status(302)
+                .status(redirection.code)
                 .header("Location", redirection.location.clone())
                 .body(ProxyHandlerBody::Empty)
                 .unwrap());
         }
         None => {
             let mut uri_path: Option<String> = None;
+            let mut red_code: Option<u16> = None;
             for (url, target) in params.redirections.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                     println!("(!) {} has matched with {}", url, match_url);
@@ -103,13 +104,14 @@ pub async fn proxy_handler(
                         utils::remove_last_slash(&target.location),
                         new_path.unwrap()
                     ));
+                    red_code = Some(target.code);
                     break;
                 }
             }
 
             if let Some(uri) = uri_path {
                 return Ok(Response::builder()
-                    .status(302)
+                    .status(red_code.unwrap())
                     .header("Location", uri)
                     .body(ProxyHandlerBody::Empty)
                     .unwrap());

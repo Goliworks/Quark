@@ -3,7 +3,6 @@ mod toml_model;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
-    net::SocketAddr,
 };
 use toml_model::ConfigToml;
 
@@ -14,6 +13,7 @@ const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_STRICT_URI: bool = false;
+const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -29,7 +29,7 @@ pub struct Server {
 #[derive(Debug, Clone)]
 pub struct ServerParams {
     pub targets: BTreeMap<String, Target>, // Domain -> Location
-    pub redirections: BTreeMap<String, Target>, // Domain -> redirection
+    pub redirections: BTreeMap<String, Redirection>, // Domain -> redirection
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -44,6 +44,13 @@ pub struct TlsCertificate {
 pub struct Target {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+}
+
+#[derive(Debug, Clone)]
+pub struct Redirection {
+    pub location: String,
+    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub code: u16,
 }
 
 impl ServiceConfig {
@@ -164,9 +171,14 @@ pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_mod
             let source = utils::remove_last_slash(&red.source);
             server.params.redirections.insert(
                 format!("{}{}", service.domain.clone(), source),
-                Target {
+                Redirection {
                     location: red.target.clone(),
                     strict_uri: red.strict.unwrap_or(DEFAULT_STRICT_URI),
+                    code: if red.temporary.unwrap_or(DEFAULT_TEMPORARY_REDIRECT) {
+                        302
+                    } else {
+                        301
+                    },
                 },
             );
         }
