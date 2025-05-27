@@ -83,6 +83,7 @@ pub async fn proxy_handler(
     let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
 
     match params.redirections.get(match_url.as_str()) {
+        // First, check for a strict match.
         Some(redirection) => {
             return Ok(Response::builder()
                 .status(redirection.code)
@@ -90,15 +91,13 @@ pub async fn proxy_handler(
                 .body(ProxyHandlerBody::Empty)
                 .unwrap());
         }
+        // If no strict match, check for a match with the path.
         None => {
             let mut uri_path: Option<String> = None;
             let mut red_code: Option<u16> = None;
             for (url, target) in params.redirections.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
-                    println!("(!) {} has matched with {}", url, match_url);
-                    println!("Req path {}", path);
                     let new_path = match_url.strip_prefix(url);
-                    println!("New path {}", new_path.unwrap());
                     uri_path = Some(format!(
                         "{}{}",
                         utils::remove_last_slash(&target.location),
@@ -129,10 +128,7 @@ pub async fn proxy_handler(
             let mut uri_path: Option<String> = None;
             for (url, target) in params.targets.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
-                    println!("(!) {} has matched with {}", url, match_url);
-                    println!("Req path {}", path);
                     let new_path = match_url.strip_prefix(url);
-                    println!("New path {}", new_path.unwrap());
                     uri_path = Some(format!(
                         "{}{}",
                         utils::remove_last_slash(&target.location),
@@ -149,7 +145,9 @@ pub async fn proxy_handler(
         }
     };
 
+    // Build the client.
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
+    // Extract parts and body from the request.
     let (parts, body) = req.into_parts();
 
     // Request the targeted server.

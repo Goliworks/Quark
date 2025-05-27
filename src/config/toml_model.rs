@@ -10,7 +10,6 @@ pub struct ConfigToml {
 #[derive(Debug, Deserialize)]
 pub struct Service {
     pub domain: String,
-    pub location: String,
     pub locations: Option<Vec<Locations>>,
     pub redirections: Option<Vec<Redirections>>,
     pub port: Option<u16>,
@@ -30,13 +29,11 @@ pub struct Tls {
 pub struct Locations {
     pub source: String,
     pub target: String,
-    pub strict: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Redirections {
     pub source: String,
     pub target: String,
-    pub strict: Option<bool>,
     pub temporary: Option<bool>,
 }

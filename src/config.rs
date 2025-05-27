@@ -12,7 +12,6 @@ pub const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
-const DEFAULT_STRICT_URI: bool = false;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 
 #[derive(Debug, Clone)]
@@ -135,7 +134,7 @@ impl ServiceConfig {
     }
 }
 
-pub fn get_toml_config(path: String) -> ConfigToml {
+fn get_toml_config(path: String) -> ConfigToml {
     let toml_str = fs::read_to_string(path).unwrap();
     let config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
@@ -144,22 +143,17 @@ pub fn get_toml_config(path: String) -> ConfigToml {
     config
 }
 
-pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::Service) {
-    // server_tls
-    //     .params
-    //     .targets
-    //     .insert(service.domain.clone(), service.location.clone());
-
+fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::Service) {
     // Other locations
     if let Some(locations) = &service.locations {
         for location in locations {
             // Remove last /
-            let source = utils::remove_last_slash(&location.source);
+            let (source, strict_mode) = source_and_strict_mode(&location.source);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 Target {
                     location: location.target.clone(),
-                    strict_uri: location.strict.unwrap_or(DEFAULT_STRICT_URI),
+                    strict_uri: strict_mode,
                 },
             );
         }
@@ -168,12 +162,12 @@ pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_mod
     if let Some(redirections) = &service.redirections {
         for red in redirections {
             // Remove last /
-            let source = utils::remove_last_slash(&red.source);
+            let (source, strict_mode) = source_and_strict_mode(&red.source);
             server.params.redirections.insert(
                 format!("{}{}", service.domain.clone(), source),
                 Redirection {
                     location: red.target.clone(),
-                    strict_uri: red.strict.unwrap_or(DEFAULT_STRICT_URI),
+                    strict_uri: strict_mode,
                     code: if red.temporary.unwrap_or(DEFAULT_TEMPORARY_REDIRECT) {
                         302
                     } else {
@@ -182,5 +176,13 @@ pub fn manage_locations_and_redirections(server: &mut Server, service: &toml_mod
                 },
             );
         }
+    }
+}
+
+fn source_and_strict_mode(source: &str) -> (&str, bool) {
+    if source.ends_with("/*") {
+        (&source[..source.len() - 2], false)
+    } else {
+        (utils::remove_last_slash(source), true)
     }
 }
