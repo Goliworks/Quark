@@ -8,6 +8,10 @@ pub fn not_found() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::NOT_FOUND)
 }
 
+pub fn forbidden() -> Response<ProxyHandlerBody> {
+    error_builder(StatusCode::FORBIDDEN)
+}
+
 pub fn internal_server_error() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::INTERNAL_SERVER_ERROR)
 }

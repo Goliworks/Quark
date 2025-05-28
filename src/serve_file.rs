@@ -16,6 +16,11 @@ pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
 
     let file_path = sanitize_path(path);
 
+    // Default forbidden response if the path is a dir.
+    if file_path.is_dir() {
+        return http_response::forbidden();
+    }
+
     match tokio::fs::File::open(&file_path).await {
         Ok(file) => {
             let mime_type = mime_guess::from_path(&file_path)
