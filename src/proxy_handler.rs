@@ -1,36 +1,54 @@
 use std::{
+    path::Path,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
-use http_body_util::Full;
+use futures::TryStreamExt;
+use http_body_util::{Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
-    Request, Response,
+    Request, Response, StatusCode,
 };
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
+use tokio_util::io::ReaderStream;
 
 use crate::{config::ServerParams, error, utils};
 
+type BoxedFrameStream =
+    Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
+
 pub enum ProxyHandlerBody {
-    Incoming(hyper::body::Incoming),
+    Incoming(Incoming),
     Full(Full<Bytes>),
+    StreamBody(StreamBody<BoxedFrameStream>),
     Empty,
 }
 
 impl hyper::body::Body for ProxyHandlerBody {
     type Data = hyper::body::Bytes;
-    type Error = hyper::Error;
+    type Error = std::io::Error;
 
     fn poll_frame(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         match &mut *self.get_mut() {
-            Self::Incoming(incoming) => Pin::new(incoming).poll_frame(cx),
+            Self::Incoming(incoming) => match Pin::new(incoming).poll_frame(cx) {
+                Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
+                Poll::Ready(Some(Err(err))) => {
+                    println!("Error: {}", err);
+                    Poll::Ready(Some(Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        err,
+                    ))))
+                }
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            },
             Self::Full(full) => match Pin::new(full).poll_frame(cx) {
                 Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
                 Poll::Ready(Some(Err(_err))) => {
@@ -39,6 +57,7 @@ impl hyper::body::Body for ProxyHandlerBody {
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
+            Self::StreamBody(stream_body) => Pin::new(stream_body).poll_frame(cx),
             Self::Empty => Poll::Ready(None),
         }
     }
@@ -47,7 +66,7 @@ impl hyper::body::Body for ProxyHandlerBody {
 pub async fn proxy_handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
-) -> Result<Response<ProxyHandlerBody>, hyper_util::client::legacy::Error> {
+) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
     // Get the domain.
     // Use authority for HTTP/2
     let domain = if req.uri().authority().is_some() {
@@ -77,6 +96,9 @@ pub async fn proxy_handler(
             .body(ProxyHandlerBody::Empty)
             .unwrap());
     }
+
+    // let sf = serve_file().await;
+    // return Ok(sf);
 
     // Check for redirections.
 
@@ -193,6 +215,44 @@ pub async fn proxy_handler(
         Err(err) => {
             println!("Error: {:?}", err);
             return Ok(error::bad_gateway());
+        }
+    };
+}
+
+async fn serve_file() -> Response<ProxyHandlerBody> {
+    println!("Serving file");
+
+    let base_dir = "./";
+    let file_path = Path::new(base_dir).join("file.html");
+
+    match tokio::fs::File::open(&file_path).await {
+        Ok(file) => {
+            let mime_type = mime_guess::from_path(&file_path)
+                .first_or_octet_stream()
+                .to_string();
+
+            let reader_stream = ReaderStream::new(file)
+                .map_ok(Frame::data)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+            let boxed_stream: BoxedFrameStream = Box::pin(reader_stream);
+
+            let body = ProxyHandlerBody::StreamBody(StreamBody::new(boxed_stream));
+
+            let res = Response::builder()
+                .status(200)
+                .header("Content-Type", mime_type)
+                .body(body)
+                .unwrap();
+
+            return res;
+        }
+        Err(err) => {
+            println!("Error: {}", err);
+            let res = Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(ProxyHandlerBody::Full(Full::from("File not found")))
+                .unwrap();
+            return res;
         }
     };
 }

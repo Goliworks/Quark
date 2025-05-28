@@ -29,6 +29,7 @@ pub struct Tls {
 pub struct Locations {
     pub source: String,
     pub target: String,
+    pub serve_files: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
