@@ -1,12 +1,10 @@
 use std::{
-    path::Path,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
 
-use futures::TryStreamExt;
 use http_body_util::{Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
@@ -14,11 +12,10 @@ use hyper::{
 };
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
-use tokio_util::io::ReaderStream;
 
-use crate::{config::ServerParams, error, utils};
+use crate::{config::ServerParams, error, serve_file::serve_file, utils};
 
-type BoxedFrameStream =
+pub type BoxedFrameStream =
     Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
 
 pub enum ProxyHandlerBody {
@@ -91,14 +88,14 @@ pub async fn proxy_handler(
         .find(|x| x.starts_with(&domain.to_string()))
     {
         return Ok(Response::builder()
-            .status(301)
+            .status(StatusCode::PERMANENT_REDIRECT)
             .header("Location", format!("https://{}{}", dom, path))
             .body(ProxyHandlerBody::Empty)
             .unwrap());
     }
 
-    // let sf = serve_file().await;
-    // return Ok(sf);
+    let sf = serve_file().await;
+    return Ok(sf);
 
     // Check for redirections.
 
@@ -215,44 +212,6 @@ pub async fn proxy_handler(
         Err(err) => {
             println!("Error: {:?}", err);
             return Ok(error::bad_gateway());
-        }
-    };
-}
-
-async fn serve_file() -> Response<ProxyHandlerBody> {
-    println!("Serving file");
-
-    let base_dir = "./";
-    let file_path = Path::new(base_dir).join("file.html");
-
-    match tokio::fs::File::open(&file_path).await {
-        Ok(file) => {
-            let mime_type = mime_guess::from_path(&file_path)
-                .first_or_octet_stream()
-                .to_string();
-
-            let reader_stream = ReaderStream::new(file)
-                .map_ok(Frame::data)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-            let boxed_stream: BoxedFrameStream = Box::pin(reader_stream);
-
-            let body = ProxyHandlerBody::StreamBody(StreamBody::new(boxed_stream));
-
-            let res = Response::builder()
-                .status(200)
-                .header("Content-Type", mime_type)
-                .body(body)
-                .unwrap();
-
-            return res;
-        }
-        Err(err) => {
-            println!("Error: {}", err);
-            let res = Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(ProxyHandlerBody::Full(Full::from("File not found")))
-                .unwrap();
-            return res;
         }
     };
 }

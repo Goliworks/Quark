@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod proxy_handler;
+mod serve_file;
 mod utils;
 
 use std::{net::SocketAddr, sync::Arc};
