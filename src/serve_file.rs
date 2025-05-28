@@ -6,7 +6,7 @@ use hyper::{body::Frame, Response};
 use tokio_util::io::ReaderStream;
 
 use crate::{
-    error,
+    http_response,
     proxy_handler::{BoxedFrameStream, ProxyHandlerBody},
 };
 
@@ -39,7 +39,7 @@ pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
         }
         Err(err) => {
             println!("Error: {}", err);
-            return error::not_found();
+            return http_response::not_found();
         }
     };
 }

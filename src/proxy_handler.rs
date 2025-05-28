@@ -13,7 +13,7 @@ use hyper::{
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
 
-use crate::{config::ServerParams, error, serve_file::serve_file, utils};
+use crate::{config::ServerParams, http_response, serve_file::serve_file, utils};
 
 pub type BoxedFrameStream =
     Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
@@ -184,7 +184,7 @@ pub async fn proxy_handler(
                 return Ok(sf);
             }
         }
-        Err(_) => return Ok(error::internal_server_error()),
+        Err(_) => return Ok(http_response::internal_server_error()),
     };
 
     *new_req.headers_mut() = parts.headers;
@@ -204,7 +204,7 @@ pub async fn proxy_handler(
         // Get the error from the timeout and return a 504 error.
         Err(err) => {
             println!("Error: {:?}", err);
-            return Ok(error::gateway_timeout());
+            return Ok(http_response::gateway_timeout());
         }
     };
 
@@ -219,7 +219,7 @@ pub async fn proxy_handler(
         // If the request failed, return a 502 error.
         Err(err) => {
             println!("Error: {:?}", err);
-            return Ok(error::bad_gateway());
+            return Ok(http_response::bad_gateway());
         }
     };
 }

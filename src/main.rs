@@ -1,5 +1,5 @@
 mod config;
-mod error;
+mod http_response;
 mod proxy_handler;
 mod serve_file;
 mod utils;
