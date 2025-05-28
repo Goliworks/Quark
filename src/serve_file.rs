@@ -1,12 +1,16 @@
 use std::path::{Component, Path, PathBuf};
 
 use futures::TryStreamExt;
-use http_body_util::{Full, StreamBody};
-use hyper::{body::Frame, Response, StatusCode};
+use http_body_util::StreamBody;
+use hyper::{body::Frame, Response};
 use tokio_util::io::ReaderStream;
 
-use crate::proxy_handler::{BoxedFrameStream, ProxyHandlerBody};
+use crate::{
+    error,
+    proxy_handler::{BoxedFrameStream, ProxyHandlerBody},
+};
 
+// Simple file server.
 pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
     println!("Serving file");
 
@@ -35,11 +39,7 @@ pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
         }
         Err(err) => {
             println!("Error: {}", err);
-            let res = Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(ProxyHandlerBody::Full(Full::from("File not found")))
-                .unwrap();
-            return res;
+            return error::not_found();
         }
     };
 }

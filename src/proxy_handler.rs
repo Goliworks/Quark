@@ -172,12 +172,14 @@ pub async fn proxy_handler(
     let mut new_req: Request<Incoming> = match uri_string {
         Ok((uri, serve_files)) => {
             if !serve_files {
+                // Build the reverse proxy request
                 Request::builder()
                     .method(parts.method)
                     .uri(uri)
                     .body(body)
                     .expect("request builder")
             } else {
+                // Serve files. Return directly the response.
                 let sf = serve_file(&uri).await;
                 return Ok(sf);
             }
