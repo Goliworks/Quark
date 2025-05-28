@@ -94,9 +94,6 @@ pub async fn proxy_handler(
             .unwrap());
     }
 
-    let sf = serve_file().await;
-    return Ok(sf);
-
     // Check for redirections.
 
     let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
@@ -139,12 +136,13 @@ pub async fn proxy_handler(
 
     // Get the domain (and remove port) from host.
 
-    let uri_string: Result<String, _> = match params.targets.get(match_url.as_str()) {
+    let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
-        Some(target) => Ok(target.location.clone()),
+        Some(target) => Ok((target.location.clone(), target.serve_files)),
         // If no strict match, check for a match with the path.
         None => {
             let mut uri_path: Option<String> = None;
+            let mut serve_files: Option<bool> = None;
             for (url, target) in params.targets.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                     let new_path = match_url.strip_prefix(url);
@@ -153,12 +151,13 @@ pub async fn proxy_handler(
                         utils::remove_last_slash(&target.location),
                         new_path.unwrap()
                     ));
+                    serve_files = Some(target.serve_files);
                     break;
                 }
             }
 
             match uri_path {
-                Some(uri) => Ok(uri),
+                Some(uri) => Ok((uri, serve_files.unwrap())),
                 None => Err(()),
             }
         }
@@ -171,11 +170,18 @@ pub async fn proxy_handler(
 
     // Request the targeted server.
     let mut new_req: Request<Incoming> = match uri_string {
-        Ok(uri) => Request::builder()
-            .method(parts.method)
-            .uri(uri)
-            .body(body)
-            .expect("request builder"),
+        Ok((uri, serve_files)) => {
+            if !serve_files {
+                Request::builder()
+                    .method(parts.method)
+                    .uri(uri)
+                    .body(body)
+                    .expect("request builder")
+            } else {
+                let sf = serve_file(&uri).await;
+                return Ok(sf);
+            }
+        }
         Err(_) => return Ok(error::internal_server_error()),
     };
 

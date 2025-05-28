@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use futures::TryStreamExt;
 use http_body_util::{Full, StreamBody};
@@ -7,11 +7,10 @@ use tokio_util::io::ReaderStream;
 
 use crate::proxy_handler::{BoxedFrameStream, ProxyHandlerBody};
 
-pub async fn serve_file() -> Response<ProxyHandlerBody> {
+pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
     println!("Serving file");
 
-    let base_dir = "./";
-    let file_path = Path::new(base_dir).join("file.html");
+    let file_path = sanitize_path(path);
 
     match tokio::fs::File::open(&file_path).await {
         Ok(file) => {
@@ -43,4 +42,20 @@ pub async fn serve_file() -> Response<ProxyHandlerBody> {
             return res;
         }
     };
+}
+
+fn sanitize_path(path: &str) -> PathBuf {
+    let mut clean_path = PathBuf::new();
+
+    for component in Path::new(path).components() {
+        match component {
+            Component::Normal(part) => clean_path.push(part),
+            Component::ParentDir => continue,
+            Component::CurDir => continue,
+            Component::RootDir => clean_path.push("/"),
+            Component::Prefix(_) => continue,
+        }
+    }
+
+    clean_path
 }

@@ -13,6 +13,7 @@ const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
+const DEFAULT_SERVE_FILES: bool = false;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
@@ -43,6 +44,7 @@ pub struct TlsCertificate {
 pub struct Target {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub serve_files: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +156,7 @@ fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::
                 Target {
                     location: location.target.clone(),
                     strict_uri: strict_mode,
+                    serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
                 },
             );
         }
