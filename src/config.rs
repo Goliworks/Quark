@@ -80,7 +80,7 @@ impl ServiceConfig {
                     });
 
                     manage_locations_and_redirections(server_tls, service);
-
+                    www_auto_redirection(server_tls, service, port_tls, true);
                     // Create a struct with the found certificates.
                     let tls_cert = TlsCertificate {
                         cert: tls.certificate.clone(),
@@ -111,19 +111,34 @@ impl ServiceConfig {
             });
 
             manage_locations_and_redirections(server, service);
+            www_auto_redirection(
+                server,
+                service,
+                if service.tls.is_some() {
+                    service
+                        .tls
+                        .as_ref()
+                        .unwrap()
+                        .port
+                        .unwrap_or(DEFAULT_PORT_TLS)
+                } else {
+                    port
+                },
+                service.tls.is_some() && tls_redirection,
+            );
 
             // Define if a tls redirection should be done.
             if tls_redirection {
                 let domain = service.domain.clone();
-                let port = service
+                let tls_port = service
                     .tls
                     .as_ref()
                     .unwrap()
                     .port
                     .unwrap_or(DEFAULT_PORT_TLS);
 
-                let tls_domain = if port != DEFAULT_PORT_TLS {
-                    format!("{}:{}", domain, port)
+                let tls_domain = if tls_port != DEFAULT_PORT_TLS {
+                    format!("{}:{}", domain, tls_port)
                 } else {
                     domain
                 };
@@ -180,6 +195,41 @@ fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::
             );
         }
     }
+}
+
+fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {
+    let domain: String;
+    let target_domain: String;
+    let default_port = if tls { DEFAULT_PORT_TLS } else { DEFAULT_PORT };
+    // If the configured domain doesn't start with www, redirect every request
+    // that starts with www to the configured domain.
+    if !service.domain.starts_with("www") {
+        domain = format!("www.{}", service.domain);
+        target_domain = service.domain.clone();
+    // Otherwise, redirect every request that doesn't start with www to www.domain.
+    } else {
+        domain = service.domain.clone();
+        target_domain = service.domain.strip_prefix("www.").unwrap().to_string();
+    }
+    let target = format!(
+        "http{}://{}{}",
+        if tls { "s" } else { "" },
+        target_domain,
+        if port != default_port {
+            format!(":{}", port)
+        } else {
+            "".to_string()
+        }
+    );
+
+    server.params.redirections.insert(
+        domain,
+        Redirection {
+            location: target,
+            strict_uri: false,
+            code: 302,
+        },
+    );
 }
 
 fn source_and_strict_mode(source: &str) -> (&str, bool) {
