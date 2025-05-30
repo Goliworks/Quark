@@ -44,7 +44,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
     let max_conns = Arc::new(tokio::sync::Semaphore::new(1024));
-    let max_req = Arc::new(tokio::sync::Semaphore::new(100));
+    let max_req = Arc::new(tokio::sync::Semaphore::new(
+        tokio::sync::Semaphore::MAX_PERMITS,
+    ));
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
@@ -92,7 +94,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                     loop {
-                        let (stream, _) = listener.accept().await.unwrap();
+                        let permit = match max_conns.clone().try_acquire_owned() {
+                            Ok(p) => p,
+                            Err(_) => {
+                                eprintln!("Too many TLS connection. Connection closed.");
+                                continue;
+                            }
+                        };
+
+                        let res = listener.accept().await;
+                        let (stream, _) = match res {
+                            Ok(res) => res,
+                            Err(err) => {
+                                eprintln!("failed to accept connection: {err:#}");
+                                continue;
+                            }
+                        };
 
                         let acceptor = tls_acceptor.clone();
 
@@ -123,6 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             {
                                 eprintln!("failed to serve connection: {err:#}");
                             }
+                            drop(permit);
                         });
                     }
                 }
@@ -131,8 +149,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let permit = match max_conns.clone().try_acquire_owned() {
                         Ok(p) => p,
                         Err(_) => {
-                            eprintln!("semaphore closed");
-                            break;
+                            eprintln!("Too many TLS connection. Connection closed.");
+                            continue;
                         }
                     };
 

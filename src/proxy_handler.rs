@@ -69,7 +69,7 @@ pub async fn proxy_handler(
     let _permit = match max_req.clone().try_acquire_owned() {
         Ok(p) => p,
         Err(_) => {
-            eprintln!("semaphore closed");
+            // Return a 503 error if the limit is reached.
             return Ok(http_response::service_unavailable());
         }
     };
