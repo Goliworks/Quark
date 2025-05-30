@@ -166,18 +166,16 @@ pub async fn proxy_handler(
     // Build the client.
     let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     // Extract parts and body from the request.
-    let (parts, body) = req.into_parts();
+    let (mut parts, body) = req.into_parts();
 
     // Request the targeted server.
-    let mut new_req: Request<Incoming> = match uri_string {
+    let new_req: Request<Incoming> = match uri_string {
         Ok((uri, serve_files)) => {
             if !serve_files {
                 // Build the reverse proxy request
-                Request::builder()
-                    .method(parts.method)
-                    .uri(uri)
-                    .body(body)
-                    .expect("request builder")
+                parts.uri = uri.parse().unwrap();
+                parts.version = hyper::Version::HTTP_11;
+                Request::from_parts(parts, body)
             } else {
                 // Serve files. Return directly the response.
                 let sf = serve_file(&uri).await;
@@ -186,8 +184,6 @@ pub async fn proxy_handler(
         }
         Err(_) => return Ok(http_response::internal_server_error()),
     };
-
-    *new_req.headers_mut() = parts.headers;
 
     let future = client.request(new_req);
 
