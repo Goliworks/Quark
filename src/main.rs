@@ -42,6 +42,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n\n{:?}\n\n", service_config);
 
+    let http = Arc::new(Builder::new(TokioExecutor::new()));
+    let max_conns = Arc::new(tokio::sync::Semaphore::new(1024));
+    let max_req = Arc::new(tokio::sync::Semaphore::new(100));
+
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
         println!("Server listening on port {}", port);
@@ -49,6 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let server_addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
         let server_params = Arc::new(server.params);
+
+        let http = Arc::clone(&http);
+        let max_conns = Arc::clone(&max_conns);
+        let max_req = Arc::clone(&max_req);
 
         let service = async move {
             let listener = TcpListener::bind(server_addr).await.unwrap();
@@ -90,12 +98,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let server_params = Arc::clone(&server_params);
 
+                        let max_req = max_req.clone();
                         // This is the `Service` that will handle the connection.
                         // returns a Response into a `Service`.
                         let service = service_fn(move |req| {
-                            proxy_handler::proxy_handler(req, server_params.clone())
+                            proxy_handler::proxy_handler(
+                                req,
+                                server_params.clone(),
+                                max_req.clone(),
+                            )
                         });
 
+                        let http = http.clone();
                         tokio::task::spawn(async move {
                             let stream = match acceptor.accept(stream).await {
                                 Ok(stream) => stream,
@@ -104,9 +118,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     return;
                                 }
                             };
-                            if let Err(err) = Builder::new(TokioExecutor::new())
-                                .serve_connection(TokioIo::new(stream), service)
-                                .await
+                            if let Err(err) =
+                                http.serve_connection(TokioIo::new(stream), service).await
                             {
                                 eprintln!("failed to serve connection: {err:#}");
                             }
@@ -115,18 +128,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Otherwise, create a default server for http.
                 None => loop {
+                    let permit = match max_conns.clone().try_acquire_owned() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            eprintln!("semaphore closed");
+                            break;
+                        }
+                    };
+
                     let server_params = Arc::clone(&server_params);
-                    let (stream, _) = listener.accept().await.unwrap();
+
+                    let res = listener.accept().await;
+                    let (stream, _) = match res {
+                        Ok(res) => res,
+                        Err(err) => {
+                            eprintln!("failed to accept connection: {err:#}");
+                            continue;
+                        }
+                    };
+
+                    let max_req = max_req.clone();
                     let service = service_fn(move |req| {
-                        proxy_handler::proxy_handler(req, server_params.clone())
+                        proxy_handler::proxy_handler(req, server_params.clone(), max_req.clone())
                     });
+                    let http = http.clone();
                     tokio::task::spawn(async move {
-                        if let Err(err) = Builder::new(TokioExecutor::new())
-                            .serve_connection(TokioIo::new(stream), service)
-                            .await
+                        let permit = permit;
+                        if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await
                         {
                             eprintln!("failed to serve connection: {err:#}");
                         }
+                        drop(permit);
                     });
                 },
             }

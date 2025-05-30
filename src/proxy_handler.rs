@@ -63,7 +63,17 @@ impl hyper::body::Body for ProxyHandlerBody {
 pub async fn proxy_handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
+    max_req: Arc<tokio::sync::Semaphore>,
 ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
+    // Use the semaphore to limit the number of requests to the upstream server.
+    let _permit = match max_req.clone().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!("semaphore closed");
+            return Ok(http_response::service_unavailable());
+        }
+    };
+
     // Get the domain.
     // Use authority for HTTP/2
     let domain = if req.uri().authority().is_some() {

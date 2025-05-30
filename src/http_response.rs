@@ -12,6 +12,10 @@ pub fn forbidden() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::FORBIDDEN)
 }
 
+pub fn service_unavailable() -> Response<ProxyHandlerBody> {
+    error_builder(StatusCode::SERVICE_UNAVAILABLE)
+}
+
 pub fn internal_server_error() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::INTERNAL_SERVER_ERROR)
 }
