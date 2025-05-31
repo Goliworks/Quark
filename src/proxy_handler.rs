@@ -1,64 +1,15 @@
-use std::{
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
-use http_body_util::{Full, StreamBody};
-use hyper::{
-    body::{Bytes, Frame, Incoming},
-    Request, Response, StatusCode,
-};
+use hyper::{body::Incoming, Request, Response, StatusCode};
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use tokio::time::timeout;
 
-use crate::{config::ServerParams, http_response, serve_file::serve_file, utils};
-
-pub type BoxedFrameStream =
-    Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
-
-pub enum ProxyHandlerBody {
-    Incoming(Incoming),
-    Full(Full<Bytes>),
-    StreamBody(StreamBody<BoxedFrameStream>),
-    Empty,
-}
-
-impl hyper::body::Body for ProxyHandlerBody {
-    type Data = hyper::body::Bytes;
-    type Error = std::io::Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        match &mut *self.get_mut() {
-            Self::Incoming(incoming) => match Pin::new(incoming).poll_frame(cx) {
-                Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
-                Poll::Ready(Some(Err(err))) => {
-                    println!("Error: {}", err);
-                    Poll::Ready(Some(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        err,
-                    ))))
-                }
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
-            },
-            Self::Full(full) => match Pin::new(full).poll_frame(cx) {
-                Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
-                Poll::Ready(Some(Err(_err))) => {
-                    unreachable!("Full<Bytes> cannot error (Infallible)")
-                }
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
-            },
-            Self::StreamBody(stream_body) => Pin::new(stream_body).poll_frame(cx),
-            Self::Empty => Poll::Ready(None),
-        }
-    }
-}
+use crate::{
+    config::ServerParams,
+    http_response,
+    serve_file::serve_file,
+    utils::{self, ProxyHandlerBody},
+};
 
 pub async fn proxy_handler(
     req: Request<Incoming>,

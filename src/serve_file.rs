@@ -7,7 +7,7 @@ use tokio_util::io::ReaderStream;
 
 use crate::{
     http_response,
-    proxy_handler::{BoxedFrameStream, ProxyHandlerBody},
+    utils::{BoxedFrameStream, ProxyHandlerBody},
 };
 
 // Simple file server.
