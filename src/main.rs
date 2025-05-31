@@ -43,10 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n\n{:?}\n\n", service_config);
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
-    let max_conns = Arc::new(tokio::sync::Semaphore::new(1024));
-    let max_req = Arc::new(tokio::sync::Semaphore::new(
-        tokio::sync::Semaphore::MAX_PERMITS,
-    ));
+    let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
+    let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {

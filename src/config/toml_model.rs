@@ -5,6 +5,14 @@ use serde::Deserialize;
 #[derive(Debug, Deserialize)]
 pub struct ConfigToml {
     pub services: HashMap<String, Service>,
+    pub global: Option<Global>,
+}
+
+// Global config.
+#[derive(Debug, Deserialize)]
+pub struct Global {
+    pub max_connections: Option<usize>,
+    pub max_requests: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

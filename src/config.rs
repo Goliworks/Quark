@@ -14,10 +14,19 @@ const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 const DEFAULT_SERVE_FILES: bool = false;
+const DEFAULT_MAX_CONNECTIONS: usize = 1024;
+const DEFAULT_MAX_REQUESTS: usize = tokio::sync::Semaphore::MAX_PERMITS;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {
     pub servers: HashMap<u16, Server>, // Port -> Server
+    pub global: Global,
+}
+
+#[derive(Debug, Clone)]
+pub struct Global {
+    pub max_conn: usize,
+    pub max_req: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +156,20 @@ impl ServiceConfig {
             }
         }
 
-        ServiceConfig { servers }
+        let global = Global {
+            max_conn: config
+                .global
+                .as_ref()
+                .and_then(|g| g.max_connections)
+                .unwrap_or(DEFAULT_MAX_CONNECTIONS),
+            max_req: config
+                .global
+                .as_ref()
+                .and_then(|g| g.max_requests)
+                .unwrap_or(DEFAULT_MAX_REQUESTS),
+        };
+
+        ServiceConfig { servers, global }
     }
 }
 
