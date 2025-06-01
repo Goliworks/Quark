@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use hyper::{body::Incoming, Request, Response, StatusCode};
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
 use crate::{
@@ -15,6 +15,7 @@ pub async fn proxy_handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
     max_req: Arc<tokio::sync::Semaphore>,
+    client: Arc<Client<HttpConnector, Incoming>>,
 ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
     // Use the semaphore to limit the number of requests to the upstream server.
     let _permit = match max_req.clone().try_acquire_owned() {
@@ -125,7 +126,6 @@ pub async fn proxy_handler(
     };
 
     // Build the client.
-    let client: Client<_, Incoming> = Client::builder(TokioExecutor::new()).build_http();
     // Extract parts and body from the request.
     let (mut parts, body) = req.into_parts();
 

@@ -15,7 +15,7 @@ const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 const DEFAULT_SERVE_FILES: bool = false;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
-const DEFAULT_MAX_REQUESTS: usize = tokio::sync::Semaphore::MAX_PERMITS;
+const DEFAULT_MAX_REQUESTS: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {

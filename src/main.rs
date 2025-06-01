@@ -10,6 +10,7 @@ use ::futures::future::join_all;
 use config::tls::{SniCertResolver, TlsConfig};
 use config::ServiceConfig;
 use hyper::service::service_fn;
+use hyper_util::client::legacy::Client;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
@@ -43,6 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n\n{:?}\n\n", service_config);
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
+    let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
 
@@ -55,6 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let server_params = Arc::new(server.params);
 
         let http = Arc::clone(&http);
+        let client = Arc::clone(&client);
         let max_conns = Arc::clone(&max_conns);
         let max_req = Arc::clone(&max_req);
 
@@ -92,6 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                     loop {
+                        let client = Arc::clone(&client);
                         let permit = match max_conns.clone().try_acquire_owned() {
                             Ok(p) => p,
                             Err(_) => {
@@ -121,6 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 req,
                                 server_params.clone(),
                                 max_req.clone(),
+                                client.clone(),
                             )
                         });
 
@@ -144,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 // Otherwise, create a default server for http.
                 None => loop {
+                    let client = Arc::clone(&client);
                     let permit = match max_conns.clone().try_acquire_owned() {
                         Ok(p) => p,
                         Err(_) => {
@@ -165,7 +171,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     let max_req = max_req.clone();
                     let service = service_fn(move |req| {
-                        proxy_handler::proxy_handler(req, server_params.clone(), max_req.clone())
+                        proxy_handler::proxy_handler(
+                            req,
+                            server_params.clone(),
+                            max_req.clone(),
+                            client.clone(),
+                        )
                     });
                     let http = http.clone();
                     tokio::task::spawn(async move {
