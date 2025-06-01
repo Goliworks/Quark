@@ -39,7 +39,7 @@ pub async fn proxy_handler(
             .unwrap()
     };
     // Get the path from the request.
-    let path = req.uri().path_and_query().unwrap().path();
+    let path = req.uri().path_and_query().unwrap().as_str();
 
     // Redirect to HTTPS if the server has TLS configuration.
     if let Some(dom) = params

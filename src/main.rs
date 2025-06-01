@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (port, server) in service_config.servers {
         println!("Server listening on port {}", port);
 
-        let server_addr: SocketAddr = ([127, 0, 0, 1], port).into();
+        let server_addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
         let server_params = Arc::new(server.params);
 
