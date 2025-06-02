@@ -11,6 +11,7 @@ pub struct ConfigToml {
 // Global config.
 #[derive(Debug, Deserialize)]
 pub struct Global {
+    pub backlog: Option<i32>,
     pub max_connections: Option<usize>,
     pub max_requests: Option<usize>,
 }

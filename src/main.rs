@@ -43,12 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Read config file and build de server configuration via the path defined in options on startup.
     let service_config = ServiceConfig::build_from(options_config);
 
-    println!("\n\n{:?}\n\n", service_config);
-
     let http = Arc::new(Builder::new(TokioExecutor::new()));
     let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
+    let default_backlog = service_config.global.backlog;
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
@@ -65,7 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Bind the socket to the address.
         socket.bind(&socket_addr.into()).unwrap();
         // Define the backlog.
-        socket.listen(511).unwrap();
+        socket.listen(default_backlog).unwrap();
         // Define that the socket is non-blocking. Otherwise tokio can't accept it.
         socket.set_nonblocking(true).unwrap();
 

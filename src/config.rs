@@ -14,6 +14,7 @@ const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 const DEFAULT_SERVE_FILES: bool = false;
+const DEFAULT_BACKLOG: i32 = 1024;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
 
@@ -25,6 +26,7 @@ pub struct ServiceConfig {
 
 #[derive(Debug, Clone)]
 pub struct Global {
+    pub backlog: i32,
     pub max_conn: usize,
     pub max_req: usize,
 }
@@ -157,6 +159,11 @@ impl ServiceConfig {
         }
 
         let global = Global {
+            backlog: config
+                .global
+                .as_ref()
+                .and_then(|g| g.backlog)
+                .unwrap_or(DEFAULT_BACKLOG),
             max_conn: config
                 .global
                 .as_ref()
@@ -178,7 +185,6 @@ fn get_toml_config(path: String) -> ConfigToml {
     let config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
     });
-    println!("{:?}", config);
     config
 }
 
