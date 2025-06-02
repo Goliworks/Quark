@@ -4,6 +4,7 @@ mod proxy_handler;
 mod serve_file;
 mod utils;
 
+use std::net::{IpAddr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
@@ -15,6 +16,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
+use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
 use argh::FromArgs;
@@ -52,7 +54,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (port, server) in service_config.servers {
         println!("Server listening on port {}", port);
 
-        let server_addr: SocketAddr = ([0, 0, 0, 0], port).into();
+        // Build TCP Socket and Socket Address.
+        let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
+        let socket_addr: SocketAddr =
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port).into();
+        // Allow IPv4 connections.
+        socket.set_only_v6(false).unwrap();
+        // Allow reuse of the address.
+        socket.set_reuse_address(true).unwrap();
+        // Bind the socket to the address.
+        socket.bind(&socket_addr.into()).unwrap();
+        // Define the backlog.
+        socket.listen(511).unwrap();
+        // Define that the socket is non-blocking. Otherwise tokio can't accept it.
+        socket.set_nonblocking(true).unwrap();
 
         let server_params = Arc::new(server.params);
 
@@ -62,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let max_req = Arc::clone(&max_req);
 
         let service = async move {
-            let listener = TcpListener::bind(server_addr).await.unwrap();
+            let listener = TcpListener::from_std(socket.into()).unwrap();
 
             match server.tls {
                 // If server has TLS configuration, create a server for https.
