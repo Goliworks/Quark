@@ -8,7 +8,7 @@ use toml_model::ConfigToml;
 
 use crate::utils;
 
-pub const DEFAULT_PORT: u16 = 80;
+const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;

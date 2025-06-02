@@ -1,6 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
-use hyper::{body::Incoming, Request, Response, StatusCode};
+use hyper::{
+    body::Incoming,
+    header::{HeaderName, HeaderValue},
+    Request, Response, StatusCode,
+};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
@@ -16,6 +20,7 @@ pub async fn proxy_handler(
     params: Arc<ServerParams>,
     max_req: Arc<tokio::sync::Semaphore>,
     client: Arc<Client<HttpConnector, Incoming>>,
+    client_ip: String,
 ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
     // Use the semaphore to limit the number of requests to the upstream server.
     let _permit = match max_req.clone().try_acquire_owned() {
@@ -130,7 +135,7 @@ pub async fn proxy_handler(
     let (mut parts, body) = req.into_parts();
 
     // Request the targeted server.
-    let new_req: Request<Incoming> = match uri_string {
+    let mut new_req: Request<Incoming> = match uri_string {
         Ok((uri, serve_files)) => {
             if !serve_files {
                 // Build the reverse proxy request
@@ -145,6 +150,14 @@ pub async fn proxy_handler(
         }
         Err(_) => return Ok(http_response::internal_server_error()),
     };
+
+    // Add the X-Forwarded-For header to the request.
+    new_req.headers_mut().insert(
+        HeaderName::from_str("X-Forwarded-For").unwrap(),
+        HeaderValue::from_str(&client_ip).unwrap(),
+    );
+
+    println!("Headers: {:#?}", new_req.headers());
 
     let future = client.request(new_req);
 

@@ -58,3 +58,12 @@ pub fn remove_last_slash(path: &str) -> &str {
         path
     }
 }
+
+pub fn format_ip(ip: std::net::IpAddr) -> String {
+    match ip {
+        std::net::IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some() => {
+            v6.to_ipv4().unwrap().to_string()
+        }
+        _ => ip.to_string(),
+    }
+}

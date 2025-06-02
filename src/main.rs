@@ -21,6 +21,7 @@ use tokio::net::TcpListener;
 
 use argh::FromArgs;
 use tokio_rustls::TlsAcceptor;
+use utils::format_ip;
 
 #[derive(FromArgs)]
 #[argh(description = "certificates")]
@@ -119,13 +120,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         };
 
                         let res = listener.accept().await;
-                        let (stream, _) = match res {
+                        let (stream, address) = match res {
                             Ok(res) => res,
                             Err(err) => {
                                 eprintln!("failed to accept connection: {err:#}");
                                 continue;
                             }
                         };
+
+                        let client_ip = format_ip(address.ip());
 
                         let acceptor = tls_acceptor.clone();
 
@@ -140,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 server_params.clone(),
                                 max_req.clone(),
                                 client.clone(),
+                                client_ip.clone(),
                             )
                         });
 
@@ -175,13 +179,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let server_params = Arc::clone(&server_params);
 
                     let res = listener.accept().await;
-                    let (stream, _) = match res {
+                    let (stream, address) = match res {
                         Ok(res) => res,
                         Err(err) => {
                             eprintln!("failed to accept connection: {err:#}");
                             continue;
                         }
                     };
+
+                    let client_ip = format_ip(address.ip());
 
                     let max_req = max_req.clone();
                     let service = service_fn(move |req| {
@@ -190,6 +196,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             server_params.clone(),
                             max_req.clone(),
                             client.clone(),
+                            client_ip.clone(),
                         )
                     });
                     let http = http.clone();
