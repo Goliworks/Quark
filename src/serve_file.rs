@@ -12,7 +12,7 @@ use crate::{
 
 // Simple file server.
 pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
-    println!("Serving file");
+    tracing::info!("Serve file : {}", path);
 
     let file_path = sanitize_path(path);
 
@@ -43,7 +43,7 @@ pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
             return res;
         }
         Err(err) => {
-            println!("Error: {}", err);
+            tracing::error!("Serving file Error: {}", err);
             return http_response::not_found();
         }
     };

@@ -68,7 +68,7 @@ impl TlsConfig {
     // Start to watch for certificates changes.
     // Run it in a separate task.
     pub async fn watch_certs(&self, ck_list: Arc<CertifiedKeyList>) {
-        println!("Paths to watch: {:?}\n", self.paths_to_watch);
+        tracing::info!("Watch certificates paths : {:?}", self.paths_to_watch);
 
         let (mut tx, mut rx) = channel(1);
 
@@ -87,9 +87,8 @@ impl TlsConfig {
         while let Some(res) = rx.next().await {
             match res {
                 Ok(event) => {
-                    // println!("changed: {:?}", event);
                     if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                        println!("File changed: {}", event.paths[0].display());
+                        tracing::warn!("File changed: {}", event.paths[0].display());
 
                         for cert in self.certs.iter() {
                             self.reload_certificates(cert, &ck_list);
@@ -97,7 +96,7 @@ impl TlsConfig {
                     }
                 }
 
-                Err(e) => println!("watch error: {:?}", e),
+                Err(e) => tracing::error!("watch error: {:?}", e),
             }
         }
     }
@@ -151,7 +150,7 @@ impl TlsConfig {
                     for name in &san.general_names {
                         match name {
                             GeneralName::DNSName(dnsn) => {
-                                println!("{}", dnsn);
+                                tracing::trace!("DNSName: {}", dnsn);
                                 domain_names.push(dnsn.to_string());
                             }
                             _ => {}
@@ -175,21 +174,21 @@ pub struct SniCertResolver {
 impl ResolvesServerCert for SniCertResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
         if let Some(server_name) = client_hello.server_name() {
-            println!("SNI requested: {}", server_name);
+            tracing::trace!("SNI requested: {}", server_name);
 
             if let Some(cert) = self.certs.get(&server_name.to_string()) {
-                println!("SNI resolved to: {}", server_name);
+                tracing::trace!("SNI resolved to: {}", server_name);
                 return Some(cert.load_full());
             }
 
             //  Try wildcards.
             let wildcard_name = convert_to_wildcard(&server_name);
             if let Some(cert) = self.certs.get(&wildcard_name) {
-                println!("SNI resolved to: {}", wildcard_name);
+                tracing::trace!("SNI resolved to: {}", wildcard_name);
                 return Some(cert.load_full());
             }
         }
-        println!("No SNI provided by client.");
+        tracing::warn!("No SNI provided by client.");
         None
     }
 }

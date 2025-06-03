@@ -15,6 +15,11 @@ use crate::{
     utils::{self, ProxyHandlerBody},
 };
 
+#[tracing::instrument(
+    name = "Handler",
+    fields(ip = %client_ip),
+    skip(req, params, max_req, client, client_ip, scheme)
+)]
 pub async fn proxy_handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
@@ -27,6 +32,7 @@ pub async fn proxy_handler(
     let _permit = match max_req.clone().try_acquire_owned() {
         Ok(p) => p,
         Err(_) => {
+            tracing::error!("503 - Request limit reached");
             // Return a 503 error if the limit is reached.
             return Ok(http_response::service_unavailable());
         }
@@ -51,6 +57,10 @@ pub async fn proxy_handler(
 
     // Get the path from the request.
     let path = req.uri().path_and_query().unwrap().as_str();
+    // Used for logs.
+    let source_url = format!("{}://{}{}", scheme, &authority, &path);
+
+    tracing::info!("Navigate to {}", &source_url);
 
     // Redirect to HTTPS if the server has TLS configuration.
     if let Some(dom) = params
@@ -177,6 +187,9 @@ pub async fn proxy_handler(
         HeaderValue::from_str(scheme).unwrap(),
     );
 
+    // Destination URL for logs.
+    let dest_url = new_req.uri().to_string();
+
     // Embeding the future in a timeout.
     // If the request is too long, return a 504 error.
     let future = client.request(new_req);
@@ -190,7 +203,8 @@ pub async fn proxy_handler(
         }
         // Get the error from the timeout and return a 504 error.
         Err(err) => {
-            println!("Error: {:?}", err);
+            tracing::debug!("Error: {:?}", err);
+            tracing::error!("Gateway timeout | {} -> {}", source_url, dest_url);
             return Ok(http_response::gateway_timeout());
         }
     };
@@ -205,7 +219,8 @@ pub async fn proxy_handler(
         }
         // If the request failed, return a 502 error.
         Err(err) => {
-            println!("Error: {:?}", err);
+            tracing::debug!("Error: {:?}", err);
+            tracing::error!("Bad Gateway | {} -> {}", source_url, dest_url);
             return Ok(http_response::bad_gateway());
         }
     };

@@ -23,5 +23,5 @@ mime_guess = "2.0.5"
 tokio-util = "0.7.15"
 socket2 = "0.5.10"
 tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
+tracing-subscriber = {version = "0.3.19", features = ["env-filter"]}
 tracing-appender = "0.2.3"

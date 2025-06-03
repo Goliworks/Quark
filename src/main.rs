@@ -70,12 +70,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         socket.set_only_v6(false).unwrap();
         // Allow reuse of the address.
         socket.set_reuse_address(true).unwrap();
+        // Define that the socket is non-blocking. Otherwise tokio can't accept it.
+        socket.set_nonblocking(true).unwrap();
         // Bind the socket to the address.
         socket.bind(&socket_addr.into()).unwrap();
         // Define the backlog.
         socket.listen(default_backlog).unwrap();
-        // Define that the socket is non-blocking. Otherwise tokio can't accept it.
-        socket.set_nonblocking(true).unwrap();
 
         let server_params = Arc::new(server.params);
 
