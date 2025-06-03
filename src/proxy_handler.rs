@@ -21,6 +21,7 @@ pub async fn proxy_handler(
     max_req: Arc<tokio::sync::Semaphore>,
     client: Arc<Client<HttpConnector, Incoming>>,
     client_ip: String,
+    scheme: &str,
 ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
     // Use the semaphore to limit the number of requests to the upstream server.
     let _permit = match max_req.clone().try_acquire_owned() {
@@ -32,7 +33,22 @@ pub async fn proxy_handler(
     };
 
     // Get the domain.
-    let domain = req.uri().host().unwrap();
+    // Use authority for HTTP/2
+    let (authority, domain) = if req.uri().authority().is_some() {
+        let authority = req.uri().authority().unwrap().to_string();
+        let domain = req.uri().authority().unwrap().host();
+        (authority, domain)
+    } else {
+        let authority = req.headers()["host"].to_str().unwrap().to_string();
+        let domain = req.headers()["host"]
+            .to_str()
+            .unwrap()
+            .split(':')
+            .next()
+            .unwrap();
+        (authority, domain)
+    };
+
     // Get the path from the request.
     let path = req.uri().path_and_query().unwrap().as_str();
 
@@ -119,8 +135,6 @@ pub async fn proxy_handler(
     };
 
     // Extract parts and body from the request.
-    let original_authority = req.uri().authority().unwrap().to_string();
-    let original_scheme = req.uri().scheme_str().unwrap().to_string();
     let (mut parts, body) = req.into_parts();
 
     // Request the targeted server.
@@ -142,10 +156,10 @@ pub async fn proxy_handler(
 
     // Add the Host header to the request.
     // Required for HTTP/1.1.
-    let authority = new_req.uri().authority().unwrap().to_string();
+    let nr_authority = new_req.uri().authority().unwrap().to_string();
     new_req.headers_mut().insert(
         HeaderName::from_str("Host").unwrap(),
-        HeaderValue::from_str(&authority).unwrap(),
+        HeaderValue::from_str(&nr_authority).unwrap(),
     );
     // Add the X-Forwarded-For header to the request.
     new_req.headers_mut().insert(
@@ -155,12 +169,12 @@ pub async fn proxy_handler(
     // Add the X-Forwarded-Host header to the request.
     new_req.headers_mut().insert(
         HeaderName::from_str("X-Forwarded-Host").unwrap(),
-        HeaderValue::from_str(&original_authority).unwrap(),
+        HeaderValue::from_str(&authority).unwrap(),
     );
     // Add the X-Forwarded-Proto header to the request.
     new_req.headers_mut().insert(
         HeaderName::from_str("X-Forwarded-Proto").unwrap(),
-        HeaderValue::from_str(&original_scheme).unwrap(),
+        HeaderValue::from_str(scheme).unwrap(),
     );
 
     // Embeding the future in a timeout.

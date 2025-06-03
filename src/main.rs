@@ -144,6 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 max_req.clone(),
                                 client.clone(),
                                 client_ip.clone(),
+                                "https",
                             )
                         });
 
@@ -199,6 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             max_req.clone(),
                             client.clone(),
                             client_ip.clone(),
+                            "http",
                         )
                     });
                     let http = http.clone();
