@@ -1,5 +1,6 @@
 mod config;
 mod http_response;
+mod logs;
 mod proxy_handler;
 mod serve_file;
 mod utils;
@@ -22,25 +23,26 @@ use tokio::net::TcpListener;
 use argh::FromArgs;
 use tokio_rustls::TlsAcceptor;
 use tracing::info;
-use utils::format_ip;
+use utils::{format_ip, DEFAULT_CONFIG_FILE_PATH, DEFAULT_LOG_PATH};
 
 #[derive(FromArgs)]
 #[argh(description = "certificates")]
 struct Options {
     /// config file path.
-    #[argh(option, short = 'c')]
+    #[argh(option, short = 'c', default = "DEFAULT_CONFIG_FILE_PATH.to_string()")]
     config: String,
+    /// logs directory path
+    #[argh(option, short = 'l', default = "DEFAULT_LOG_PATH.to_string()")]
+    logs: String,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get options from command line.
     let options: Options = argh::from_env();
-    let options_config = options.config.clone();
 
-    // Setup tracing.
-
-    tracing_subscriber::fmt().compact().init();
+    // Init logs.
+    let _guard = logs::start_logs(options.logs);
 
     info!("Starting server");
 
@@ -48,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut servers = Vec::new();
 
     // Read config file and build de server configuration via the path defined in options on startup.
-    let service_config = ServiceConfig::build_from(options_config);
+    let service_config = ServiceConfig::build_from(options.config);
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
     let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
