@@ -21,6 +21,7 @@ use tokio::net::TcpListener;
 
 use argh::FromArgs;
 use tokio_rustls::TlsAcceptor;
+use tracing::info;
 use utils::format_ip;
 
 #[derive(FromArgs)]
@@ -33,10 +34,15 @@ struct Options {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Get options from command line.
     let options: Options = argh::from_env();
     let options_config = options.config.clone();
 
-    println!("Starting server");
+    // Setup tracing.
+
+    tracing_subscriber::fmt().compact().init();
+
+    info!("Starting server");
 
     // List of servers to start.
     let mut servers = Vec::new();
@@ -52,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
-        println!("Server listening on port {}", port);
+        info!("Server listening on port {}", port);
 
         // Build TCP Socket and Socket Address.
         let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
@@ -114,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let permit = match max_conns.clone().try_acquire_owned() {
                             Ok(p) => p,
                             Err(_) => {
-                                eprintln!("Too many TLS connection. Connection closed.");
+                                tracing::error!("Too many TLS connection. Connection closed.");
                                 continue;
                             }
                         };
@@ -123,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let (stream, address) = match res {
                             Ok(res) => res,
                             Err(err) => {
-                                eprintln!("failed to accept connection: {err:#}");
+                                tracing::error!("failed to accept connection: {err:#}");
                                 continue;
                             }
                         };
@@ -153,14 +159,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let stream = match acceptor.accept(stream).await {
                                 Ok(stream) => stream,
                                 Err(err) => {
-                                    eprintln!("failed to perform tls handshake: {err:#}");
+                                    tracing::error!("failed to perform tls handshake: {err:#}");
                                     return;
                                 }
                             };
                             if let Err(err) =
                                 http.serve_connection(TokioIo::new(stream), service).await
                             {
-                                eprintln!("failed to serve connection: {err:#}");
+                                tracing::error!("failed to serve connection: {err:#}");
                             }
                             drop(permit);
                         });
@@ -172,7 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let permit = match max_conns.clone().try_acquire_owned() {
                         Ok(p) => p,
                         Err(_) => {
-                            eprintln!("Too many TLS connection. Connection closed.");
+                            tracing::error!("Too many TLS connection. Connection closed.");
                             continue;
                         }
                     };
@@ -183,7 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (stream, address) = match res {
                         Ok(res) => res,
                         Err(err) => {
-                            eprintln!("failed to accept connection: {err:#}");
+                            tracing::error!("failed to accept connection: {err:#}");
                             continue;
                         }
                     };
@@ -208,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let permit = permit;
                         if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await
                         {
-                            eprintln!("failed to serve connection: {err:#}");
+                            tracing::error!("failed to serve connection: {err:#}");
                         }
                         drop(permit);
                     });
