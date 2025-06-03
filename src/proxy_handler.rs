@@ -32,17 +32,7 @@ pub async fn proxy_handler(
     };
 
     // Get the domain.
-    // Use authority for HTTP/2
-    let domain = if req.uri().authority().is_some() {
-        req.uri().authority().unwrap().host()
-    } else {
-        req.headers()["host"]
-            .to_str()
-            .unwrap()
-            .split(':')
-            .next()
-            .unwrap()
-    };
+    let domain = req.uri().host().unwrap();
     // Get the path from the request.
     let path = req.uri().path_and_query().unwrap().as_str();
 
@@ -101,8 +91,6 @@ pub async fn proxy_handler(
         }
     }
 
-    // Get the domain (and remove port) from host.
-
     let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
         Some(target) => Ok((target.location.clone(), target.serve_files)),
@@ -130,8 +118,9 @@ pub async fn proxy_handler(
         }
     };
 
-    // Build the client.
     // Extract parts and body from the request.
+    let original_authority = req.uri().authority().unwrap().to_string();
+    let original_scheme = req.uri().scheme_str().unwrap().to_string();
     let (mut parts, body) = req.into_parts();
 
     // Request the targeted server.
@@ -151,18 +140,32 @@ pub async fn proxy_handler(
         Err(_) => return Ok(http_response::internal_server_error()),
     };
 
+    // Add the Host header to the request.
+    // Required for HTTP/1.1.
+    let authority = new_req.uri().authority().unwrap().to_string();
+    new_req.headers_mut().insert(
+        HeaderName::from_str("Host").unwrap(),
+        HeaderValue::from_str(&authority).unwrap(),
+    );
     // Add the X-Forwarded-For header to the request.
     new_req.headers_mut().insert(
         HeaderName::from_str("X-Forwarded-For").unwrap(),
         HeaderValue::from_str(&client_ip).unwrap(),
     );
-
-    println!("Headers: {:#?}", new_req.headers());
-
-    let future = client.request(new_req);
+    // Add the X-Forwarded-Host header to the request.
+    new_req.headers_mut().insert(
+        HeaderName::from_str("X-Forwarded-Host").unwrap(),
+        HeaderValue::from_str(&original_authority).unwrap(),
+    );
+    // Add the X-Forwarded-Proto header to the request.
+    new_req.headers_mut().insert(
+        HeaderName::from_str("X-Forwarded-Proto").unwrap(),
+        HeaderValue::from_str(&original_scheme).unwrap(),
+    );
 
     // Embeding the future in a timeout.
     // If the request is too long, return a 504 error.
+    let future = client.request(new_req);
     let pending_future = timeout(Duration::from_secs(params.proxy_timeout), future).await;
 
     let response: Result<Response<Incoming>, hyper_util::client::legacy::Error>;

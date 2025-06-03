@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Starting server");
 
-    // Liste of servers to start.
+    // List of servers to start.
     let mut servers = Vec::new();
 
     // Read config file and build de server configuration via the path defined in options on startup.
@@ -135,8 +135,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let server_params = Arc::clone(&server_params);
 
                         let max_req = max_req.clone();
-                        // This is the `Service` that will handle the connection.
-                        // returns a Response into a `Service`.
+
+                        // This service will handle the connection.
                         let service = service_fn(move |req| {
                             proxy_handler::proxy_handler(
                                 req,
@@ -190,6 +190,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let client_ip = format_ip(address.ip());
 
                     let max_req = max_req.clone();
+
+                    // This service will handle the connection.
                     let service = service_fn(move |req| {
                         proxy_handler::proxy_handler(
                             req,
