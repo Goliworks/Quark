@@ -5,6 +5,7 @@ use std::{
 
 use http_body_util::{Full, StreamBody};
 use hyper::body::{Bytes, Frame, Incoming};
+use nix::unistd::{getuid, setgid, setgroups, setuid, Group, User};
 
 pub const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 pub const DEFAULT_LOG_PATH: &str = "/var/log/quark";
@@ -69,4 +70,23 @@ pub fn format_ip(ip: std::net::IpAddr) -> String {
         }
         _ => ip.to_string(),
     }
+}
+
+pub fn drop_privileges(name: &str) -> Result<&'static str, Box<dyn std::error::Error>> {
+    // Check if we are already root.
+    if !getuid().is_root() {
+        return Ok("Privileges already dropped");
+    }
+
+    let user = User::from_name(name)?;
+    let group = Group::from_name(name)?;
+
+    if let (Some(user), Some(group)) = (user, group) {
+        setgroups(&[group.gid])?;
+        setgid(group.gid)?;
+        setuid(user.uid)?;
+    } else {
+        return Err("User or group not found".into());
+    }
+    Ok("Privileges dropped")
 }

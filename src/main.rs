@@ -60,8 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
-        info!("Server listening on port {}", port);
-
         // Build TCP Socket and Socket Address.
         let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
         let socket_addr: SocketAddr =
@@ -84,9 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let max_conns = Arc::clone(&max_conns);
         let max_req = Arc::clone(&max_req);
 
-        let service = async move {
-            let listener = TcpListener::from_std(socket.into()).unwrap();
+        let listener = TcpListener::from_std(socket.into()).unwrap();
+        info!("Server listening on port {}", port);
 
+        let service = async move {
             match server.tls {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
@@ -226,6 +225,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Add the server to the list.
         servers.push(service);
+    }
+
+    // Drop privileges from root to www-data.
+    // If we are not root, it wont do anything.
+    match utils::drop_privileges("www-data") {
+        Ok(msg) => tracing::warn!("{}", msg),
+        Err(err) => return Err(err),
     }
 
     // Start all the servers.
