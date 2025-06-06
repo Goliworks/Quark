@@ -19,6 +19,7 @@ use hyper_util::{
     server::conn::auto::Builder,
 };
 use socket2::{Domain, Protocol, Socket, Type};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use argh::FromArgs;
@@ -42,25 +43,51 @@ struct Options {
     _child_process: bool,
 }
 
+const QUARK_SOCKET_PATH: &str = "/tmp/quark.sock";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // If the child process flag is set, run the server.
     if std::env::args().any(|arg| arg == "--child-process") {
         return server_process().await;
     }
 
+    // If not, run a new process flagged as a child process.
+
+    // Clean the socket file if it exists.
+    if std::path::Path::new(QUARK_SOCKET_PATH).exists() {
+        std::fs::remove_file(QUARK_SOCKET_PATH)?;
+    }
+
+    // Take the rest of the arguments and pass them to the child process.
     let mut child_args: Vec<String> = std::env::args().skip(1).collect();
     child_args.insert(0, "--child-process".to_string());
 
+    // Run the child process.
     let mut child = std::process::Command::new(std::env::current_exe()?)
         .args(child_args)
         .spawn()?;
 
-    test_main_process().await?;
+    // Run the main process.
+    main_process().await?;
     child.wait()?;
     Ok(())
 }
 
-async fn test_main_process() -> Result<(), Box<dyn std::error::Error>> {
+async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a unix socket listener.
+    let listener = tokio::net::UnixListener::bind(QUARK_SOCKET_PATH)?;
+    println!("[Parent] Waiting for connection");
+
+    // Accept connections from the child process.
+    let (mut stream, _) = listener.accept().await?;
+    println!("[Parent] Connection accepted");
+
+    // Send a ping to the child process.
+    stream.write_all(b"ping").await?;
+    println!("[Parent] Sent ping");
+
+    // Just a test to check if the main process is still alive.
     tokio::spawn(async move {
         loop {
             println!("[Parent] Send: ping");
@@ -71,6 +98,19 @@ async fn test_main_process() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
+    // Wait for parent init.
+    sleep(Duration::from_millis(100)).await;
+
+    let mut stream = tokio::net::UnixStream::connect(QUARK_SOCKET_PATH).await?;
+    println!("[Child] Connected to parent");
+    let mut buf = vec![0u8; 1024];
+    let n = stream.read(&mut buf).await?;
+    let received = &buf[..n];
+
+    println!("[Child] Received : {}", String::from_utf8_lossy(received));
+
+    // Real server startup from here.
+
     // Get options from command line.
     let options: Options = argh::from_env();
 
