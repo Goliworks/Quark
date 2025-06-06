@@ -6,6 +6,7 @@ mod serve_file;
 mod utils;
 
 use std::net::{IpAddr, Ipv6Addr};
+use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
@@ -21,6 +22,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
 use argh::FromArgs;
+use tokio::time::sleep;
 use tokio_rustls::TlsAcceptor;
 use tracing::info;
 use utils::{format_ip, DEFAULT_CONFIG_FILE_PATH, DEFAULT_LOG_PATH};
@@ -34,10 +36,41 @@ struct Options {
     /// logs directory path
     #[argh(option, short = 'l', default = "DEFAULT_LOG_PATH.to_string()")]
     logs: String,
+
+    /// run as child process
+    #[argh(switch)]
+    _child_process: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args().any(|arg| arg == "--child-process") {
+        return server_process().await;
+    }
+
+    let mut child_args: Vec<String> = std::env::args().skip(1).collect();
+    child_args.insert(0, "--child-process".to_string());
+
+    let mut child = std::process::Command::new(std::env::current_exe()?)
+        .args(child_args)
+        .spawn()?;
+
+    test_main_process().await?;
+    child.wait()?;
+    Ok(())
+}
+
+async fn test_main_process() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::spawn(async move {
+        loop {
+            println!("[Parent] Send: ping");
+            sleep(Duration::from_secs(5)).await;
+        }
+    });
+    Ok(())
+}
+
+async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Get options from command line.
     let options: Options = argh::from_env();
 
