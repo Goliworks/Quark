@@ -47,7 +47,7 @@ impl TlsConfig {
                 self.paths_to_watch.push(pathbuf);
             }
 
-            self.add_certificate_to_certified_key_list(cert, &mut ck_list);
+            add_certificate_to_certified_key_list(cert, &mut ck_list);
         }
 
         ck_list
@@ -91,7 +91,7 @@ impl TlsConfig {
                         tracing::warn!("File changed: {}", event.paths[0].display());
 
                         for cert in self.certs.iter() {
-                            self.reload_certificates(cert, &ck_list);
+                            reload_certificates(cert, &ck_list);
                         }
                     }
                 }
@@ -99,69 +99,6 @@ impl TlsConfig {
                 Err(e) => tracing::error!("watch error: {:?}", e),
             }
         }
-    }
-
-    fn add_certificate_to_certified_key_list(
-        &self,
-        cert: &TlsCertificate,
-        ck_list: &mut CertifiedKeyList,
-    ) {
-        let (domains, ck) = self.get_domains_and_ck(cert);
-
-        domains.iter().for_each(|domain| {
-            ck_list.insert(domain.to_string(), ArcSwap::new(ck.clone()));
-        })
-    }
-
-    fn reload_certificates(&self, cert: &TlsCertificate, ck_list: &CertifiedKeyList) {
-        let (domains, ck) = self.get_domains_and_ck(cert);
-
-        domains.iter().for_each(|domain| {
-            if let Some(ack) = ck_list.get(domain) {
-                ack.store(ck.clone());
-            }
-        });
-    }
-
-    fn get_domains_and_ck(&self, cert: &TlsCertificate) -> (Vec<String>, Arc<CertifiedKey>) {
-        let cert_der = load_certs(&cert.cert).unwrap();
-        let cert_buffer = load_cert_buffer(&cert.cert);
-        let key = load_private_key(&cert.key).unwrap();
-
-        let key_sign = any_supported_type(&key).unwrap();
-
-        let ck = Arc::new(CertifiedKey::new(cert_der, key_sign));
-
-        let (_, pem) = parse_x509_pem(&cert_buffer).unwrap();
-
-        let domains: Vec<String> = match parse_x509_certificate(&pem.contents) {
-            Ok((_, x509_cert)) => self.extract_domains_from_x509(&x509_cert),
-            Err(e) => panic!("{:?}", e),
-        };
-
-        (domains, ck)
-    }
-
-    fn extract_domains_from_x509(&self, x509: &X509Certificate) -> Vec<String> {
-        let mut domain_names: Vec<String> = Vec::new();
-        for ext in x509.extensions() {
-            match ext.parsed_extension() {
-                ParsedExtension::SubjectAlternativeName(san) => {
-                    for name in &san.general_names {
-                        match name {
-                            GeneralName::DNSName(dnsn) => {
-                                tracing::trace!("DNSName: {}", dnsn);
-                                domain_names.push(dnsn.to_string());
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        domain_names
     }
 }
 
@@ -219,6 +156,65 @@ fn convert_to_wildcard(server_name: &str) -> String {
 
 fn error(err: String) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+fn add_certificate_to_certified_key_list(cert: &TlsCertificate, ck_list: &mut CertifiedKeyList) {
+    let (domains, ck) = get_domains_and_ck(cert);
+
+    domains.iter().for_each(|domain| {
+        ck_list.insert(domain.to_string(), ArcSwap::new(ck.clone()));
+    })
+}
+
+fn reload_certificates(cert: &TlsCertificate, ck_list: &CertifiedKeyList) {
+    let (domains, ck) = get_domains_and_ck(cert);
+
+    domains.iter().for_each(|domain| {
+        if let Some(ack) = ck_list.get(domain) {
+            ack.store(ck.clone());
+        }
+    });
+}
+
+fn get_domains_and_ck(cert: &TlsCertificate) -> (Vec<String>, Arc<CertifiedKey>) {
+    let cert_der = load_certs(&cert.cert).unwrap();
+    let cert_buffer = load_cert_buffer(&cert.cert);
+    let key = load_private_key(&cert.key).unwrap();
+
+    let key_sign = any_supported_type(&key).unwrap();
+
+    let ck = Arc::new(CertifiedKey::new(cert_der, key_sign));
+
+    let (_, pem) = parse_x509_pem(&cert_buffer).unwrap();
+
+    let domains: Vec<String> = match parse_x509_certificate(&pem.contents) {
+        Ok((_, x509_cert)) => extract_domains_from_x509(&x509_cert),
+        Err(e) => panic!("{:?}", e),
+    };
+
+    (domains, ck)
+}
+
+fn extract_domains_from_x509(x509: &X509Certificate) -> Vec<String> {
+    let mut domain_names: Vec<String> = Vec::new();
+    for ext in x509.extensions() {
+        match ext.parsed_extension() {
+            ParsedExtension::SubjectAlternativeName(san) => {
+                for name in &san.general_names {
+                    match name {
+                        GeneralName::DNSName(dnsn) => {
+                            tracing::trace!("DNSName: {}", dnsn);
+                            domain_names.push(dnsn.to_string());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    domain_names
 }
 
 // Load public certificate from file.

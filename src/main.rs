@@ -85,7 +85,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send a ping to the child process.
     stream.write_all(b"ping").await?;
-    println!("[Parent] Sent ping");
+    println!("[Parent] Sent ping to child process");
 
     // Just a test to check if the main process is still alive.
     tokio::spawn(async move {
