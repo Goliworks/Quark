@@ -1,5 +1,6 @@
 pub mod tls;
 mod toml_model;
+use bincode::{Decode, Encode};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -18,26 +19,26 @@ const DEFAULT_BACKLOG: i32 = 1024;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ServiceConfig {
     pub servers: HashMap<u16, Server>, // Port -> Server
     pub global: Global,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Global {
     pub backlog: i32,
     pub max_conn: usize,
     pub max_req: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Server {
     pub params: ServerParams,
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct ServerParams {
     pub targets: BTreeMap<String, Target>, // Domain -> Location
     pub redirections: BTreeMap<String, Redirection>, // Domain -> redirection
@@ -45,20 +46,20 @@ pub struct ServerParams {
     pub proxy_timeout: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct TlsCertificate {
     pub cert: String,
     pub key: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Target {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub serve_files: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Redirection {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.

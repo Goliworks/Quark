@@ -90,3 +90,8 @@ pub fn drop_privileges(name: &str) -> Result<&'static str, Box<dyn std::error::E
     }
     Ok("Privileges dropped")
 }
+
+struct IpcMessage<T> {
+    kind: String,
+    payload: T,
+}

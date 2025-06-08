@@ -47,7 +47,7 @@ const QUARK_SOCKET_PATH: &str = "/tmp/quark.sock";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // If the child process flag is set, run the server.
+    // If the child process flag is set, run the server as a child process.
     if std::env::args().any(|arg| arg == "--child-process") {
         return server_process().await;
     }
@@ -78,14 +78,24 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Create a unix socket listener.
     let listener = tokio::net::UnixListener::bind(QUARK_SOCKET_PATH)?;
     println!("[Parent] Waiting for connection");
-
-    // Accept connections from the child process.
     let (mut stream, _) = listener.accept().await?;
     println!("[Parent] Connection accepted");
 
-    // Send a ping to the child process.
-    stream.write_all(b"ping").await?;
-    println!("[Parent] Sent ping to child process");
+    // Get options from command line.
+    let options: Options = argh::from_env();
+    // Load the config file.
+    let service_config = ServiceConfig::build_from(options.config);
+
+    // Encode the config into vec of bytes.
+    let encoded_sc = bincode::encode_to_vec(&service_config, bincode::config::standard())?;
+    // Get the size of the config in bytes.
+    let data_size = (encoded_sc.len() as u32).to_be_bytes();
+    // First call. Send the size of the config to the child process. (4 bytes)
+    stream.write_all(&data_size).await?;
+    println!("[Parent] Sent config size to child process");
+    // Second call. Send the config to the child process.
+    stream.write_all(&encoded_sc).await?;
+    println!("[Parent] Sent config to child process");
 
     // Just a test to check if the main process is still alive.
     tokio::spawn(async move {
@@ -100,16 +110,19 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
 async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
     sleep(Duration::from_millis(100)).await;
-
+    // Connect to the parent process.
     let mut stream = tokio::net::UnixStream::connect(QUARK_SOCKET_PATH).await?;
-    println!("[Child] Connected to parent");
-    let mut buf = vec![0u8; 1024];
-    let n = stream.read(&mut buf).await?;
-    let received = &buf[..n];
-
-    println!("[Child] Received : {}", String::from_utf8_lossy(received));
-
-    // Real server startup from here.
+    // Get the size of the config from the parent process.
+    let mut size_buf = [0u8; 4];
+    stream.read_exact(&mut size_buf).await?;
+    // Get the config from the parent process.
+    let size = u32::from_be_bytes(size_buf) as usize;
+    // Get the config from the parent process.
+    let mut buf = vec![0u8; size];
+    stream.read_exact(&mut buf).await?;
+    // Decode the config.
+    let (service_config, _): (ServiceConfig, _) =
+        bincode::decode_from_slice(&buf, bincode::config::standard())?;
 
     // Get options from command line.
     let options: Options = argh::from_env();
@@ -121,9 +134,6 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // List of servers to start.
     let mut servers = Vec::new();
-
-    // Read config file and build de server configuration via the path defined in options on startup.
-    let service_config = ServiceConfig::build_from(options.config);
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
     let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
