@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use bincode::{Decode, Encode};
 use futures::{SinkExt, StreamExt};
 use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, RecommendedWatcher, Watcher};
@@ -23,13 +24,19 @@ use super::TlsCertificate;
 
 pub type CertifiedKeyList = HashMap<String, ArcSwap<CertifiedKey>>;
 
-pub struct TlsConfig {
-    certs: Vec<TlsCertificate>,
+#[derive(Encode, Decode, Debug)]
+pub struct IpcCerts {
+    pub cert: Vec<u8>,
+    pub key: Vec<u8>,
+}
+
+pub struct TlsConfig<'a> {
+    certs: &'a Vec<IpcCerts>,
     paths_to_watch: Vec<PathBuf>,
 }
 
-impl TlsConfig {
-    pub fn new(certs: Vec<TlsCertificate>) -> TlsConfig {
+impl<'a> TlsConfig<'a> {
+    pub fn new(certs: &'a Vec<IpcCerts>) -> TlsConfig<'a> {
         TlsConfig {
             certs,
             paths_to_watch: Vec::new(),
@@ -40,12 +47,12 @@ impl TlsConfig {
         let mut ck_list: CertifiedKeyList = HashMap::new();
 
         for cert in self.certs.iter() {
-            let path = Path::new(&cert.cert);
-            let directory = path.parent().unwrap();
-            let pathbuf = directory.to_path_buf();
-            if !self.paths_to_watch.contains(&pathbuf) {
-                self.paths_to_watch.push(pathbuf);
-            }
+            // let path = Path::new(&cert.cert);
+            // let directory = path.parent().unwrap();
+            // let pathbuf = directory.to_path_buf();
+            // if !self.paths_to_watch.contains(&pathbuf) {
+            //     self.paths_to_watch.push(pathbuf);
+            // }
 
             add_certificate_to_certified_key_list(cert, &mut ck_list);
         }
@@ -158,7 +165,7 @@ fn error(err: String) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
 }
 
-fn add_certificate_to_certified_key_list(cert: &TlsCertificate, ck_list: &mut CertifiedKeyList) {
+fn add_certificate_to_certified_key_list(cert: &IpcCerts, ck_list: &mut CertifiedKeyList) {
     let (domains, ck) = get_domains_and_ck(cert);
 
     domains.iter().for_each(|domain| {
@@ -166,7 +173,7 @@ fn add_certificate_to_certified_key_list(cert: &TlsCertificate, ck_list: &mut Ce
     })
 }
 
-fn reload_certificates(cert: &TlsCertificate, ck_list: &CertifiedKeyList) {
+fn reload_certificates(cert: &IpcCerts, ck_list: &CertifiedKeyList) {
     let (domains, ck) = get_domains_and_ck(cert);
 
     domains.iter().for_each(|domain| {
@@ -176,9 +183,9 @@ fn reload_certificates(cert: &TlsCertificate, ck_list: &CertifiedKeyList) {
     });
 }
 
-fn get_domains_and_ck(cert: &TlsCertificate) -> (Vec<String>, Arc<CertifiedKey>) {
+fn get_domains_and_ck(cert: &IpcCerts) -> (Vec<String>, Arc<CertifiedKey>) {
+    let cert_buffer = cert.cert.clone();
     let cert_der = load_certs(&cert.cert).unwrap();
-    let cert_buffer = load_cert_buffer(&cert.cert);
     let key = load_private_key(&cert.key).unwrap();
 
     let key_sign = any_supported_type(&key).unwrap();
@@ -218,31 +225,25 @@ fn extract_domains_from_x509(x509: &X509Certificate) -> Vec<String> {
 }
 
 // Load public certificate from file.
-fn load_certs(filename: &str) -> io::Result<Vec<CertificateDer<'static>>> {
+fn load_certs(buf: &Vec<u8>) -> io::Result<Vec<CertificateDer<'static>>> {
     // Open certificate file.
-    let certfile =
-        File::open(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
-    let mut reader = BufReader::new(certfile);
-
+    let mut reader = BufReader::new(Cursor::new(buf));
     // Load and return certificate.
     rustls_pemfile::certs(&mut reader).collect()
 }
 
 // Load private key from file.
-fn load_private_key(filename: &str) -> io::Result<PrivateKeyDer<'static>> {
+fn load_private_key(buf: &Vec<u8>) -> io::Result<PrivateKeyDer<'static>> {
     // Open keyfile.
-    let keyfile =
-        File::open(filename).map_err(|e| error(format!("failed to open {}: {}", filename, e)))?;
-    let mut reader = BufReader::new(keyfile);
-
+    let mut reader = BufReader::new(Cursor::new(buf));
     // Load and return a single private key.
     rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
 }
 
-fn load_cert_buffer(filename: &str) -> Vec<u8> {
-    let certfile = File::open(filename).unwrap();
-    let mut reader = BufReader::new(certfile);
-    let buffer = reader.fill_buf().unwrap();
-
-    buffer.to_vec()
-}
+// fn load_cert_buffer(filename: &str) -> Vec<u8> {
+//     let certfile = File::open(filename).unwrap();
+//     let mut reader = BufReader::new(certfile);
+//     let buffer = reader.fill_buf().unwrap();
+//
+//     buffer.to_vec()
+// }

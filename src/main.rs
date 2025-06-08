@@ -6,12 +6,14 @@ mod proxy_handler;
 mod serve_file;
 mod utils;
 
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use config::tls::{SniCertResolver, TlsConfig};
+use bincode::{Decode, Encode};
+use config::tls::{IpcCerts, SniCertResolver, TlsConfig};
 use config::ServiceConfig;
 use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
@@ -86,11 +88,36 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Load the config file.
     let service_config = ServiceConfig::build_from(options.config);
 
+    let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
+
+    for (port, server) in &service_config.servers {
+        if let Some(tls_certs) = &server.tls {
+            println!("[Parent] Server {} is configured with TLS", port);
+            println!("[Parent] tls {:#?}", tls_certs);
+            for cert in tls_certs {
+                let certfile = tokio::fs::read(cert.cert.as_str()).await?;
+                let keyfile = tokio::fs::read(cert.key.as_str()).await?;
+                let certs = IpcCerts {
+                    cert: certfile,
+                    key: keyfile,
+                };
+                cert_list.entry(*port).or_default().push(certs);
+            }
+        }
+    }
+
+    // Send the config to the child process.
     let message = ipc::IpcMessage {
         kind: "config".to_string(),
         payload: service_config,
     };
+    ipc::send_ipc_message(&mut stream, message).await?;
 
+    // Send the certs to the child process.
+    let message = ipc::IpcMessage {
+        kind: "certs".to_string(),
+        payload: cert_list,
+    };
     ipc::send_ipc_message(&mut stream, message).await?;
 
     // Just a test to check if the main process is still alive.
@@ -113,6 +140,12 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let message_sc = ipc::receive_ipc_message::<ServiceConfig>(&mut stream).await?;
 
     let service_config = message_sc.payload;
+
+    // Get the certs from the parent process.
+    let message_certs =
+        ipc::receive_ipc_message::<HashMap<u16, Vec<IpcCerts>>>(&mut stream).await?;
+    let tls_certs = message_certs.payload;
+    let tls_certs = Arc::new(tls_certs);
 
     // Get options from command line.
     let options: Options = argh::from_env();
@@ -155,6 +188,8 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         let max_conns = Arc::clone(&max_conns);
         let max_req = Arc::clone(&max_req);
 
+        let tls_certs = Arc::clone(&tls_certs).clone();
+
         let listener = TcpListener::from_std(socket.into()).unwrap();
         info!("Server listening on port {}", port);
 
@@ -163,7 +198,10 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                 // If server has TLS configuration, create a server for https.
                 Some(tls) => {
                     // Start the tls config.
-                    let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls)));
+
+                    let tls_certs = tls_certs.get(&port).unwrap();
+
+                    let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
                     let ck_list = {
                         let mut guard = tls_config.lock().await;
                         Arc::new(guard.get_certified_key_list())
@@ -173,10 +211,10 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     let ck_list_clone = Arc::clone(&ck_list);
 
                     // Start to watch for certificates changes.
-                    tokio::task::spawn(async move {
-                        let guard = tls_config_clone.lock().await;
-                        guard.watch_certs(ck_list_clone).await;
-                    });
+                    // tokio::task::spawn(async move {
+                    //     let guard = tls_config_clone.lock().await;
+                    //     guard.watch_certs(ck_list_clone).await;
+                    // });
 
                     // Generate the sni resolver pass it to the tls_config
                     // to get the rustls server config.
