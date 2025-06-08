@@ -1,5 +1,6 @@
 mod config;
 mod http_response;
+mod ipc;
 mod logs;
 mod proxy_handler;
 mod serve_file;
@@ -19,7 +20,6 @@ use hyper_util::{
     server::conn::auto::Builder,
 };
 use socket2::{Domain, Protocol, Socket, Type};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 use argh::FromArgs;
@@ -86,16 +86,12 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Load the config file.
     let service_config = ServiceConfig::build_from(options.config);
 
-    // Encode the config into vec of bytes.
-    let encoded_sc = bincode::encode_to_vec(&service_config, bincode::config::standard())?;
-    // Get the size of the config in bytes.
-    let data_size = (encoded_sc.len() as u32).to_be_bytes();
-    // First call. Send the size of the config to the child process. (4 bytes)
-    stream.write_all(&data_size).await?;
-    println!("[Parent] Sent config size to child process");
-    // Second call. Send the config to the child process.
-    stream.write_all(&encoded_sc).await?;
-    println!("[Parent] Sent config to child process");
+    let message = ipc::IpcMessage {
+        kind: "config".to_string(),
+        payload: service_config,
+    };
+
+    ipc::send_ipc_message(&mut stream, message).await?;
 
     // Just a test to check if the main process is still alive.
     tokio::spawn(async move {
@@ -113,16 +109,10 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Connect to the parent process.
     let mut stream = tokio::net::UnixStream::connect(QUARK_SOCKET_PATH).await?;
     // Get the size of the config from the parent process.
-    let mut size_buf = [0u8; 4];
-    stream.read_exact(&mut size_buf).await?;
-    // Get the config from the parent process.
-    let size = u32::from_be_bytes(size_buf) as usize;
-    // Get the config from the parent process.
-    let mut buf = vec![0u8; size];
-    stream.read_exact(&mut buf).await?;
-    // Decode the config.
-    let (service_config, _): (ServiceConfig, _) =
-        bincode::decode_from_slice(&buf, bincode::config::standard())?;
+
+    let message_sc = ipc::receive_ipc_message::<ServiceConfig>(&mut stream).await?;
+
+    let service_config = message_sc.payload;
 
     // Get options from command line.
     let options: Options = argh::from_env();
