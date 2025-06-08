@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Cursor};
-use std::path::{Path, PathBuf};
+use std::io::{self, BufReader, Cursor};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
@@ -14,13 +13,15 @@ use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
+use tokio::net::UnixStream;
+use tokio::sync::Mutex;
 use x509_parser::parse_x509_certificate;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::{GeneralName, ParsedExtension, X509Certificate};
 
 use futures::channel::mpsc::channel;
 
-use super::TlsCertificate;
+use crate::ipc;
 
 pub type CertifiedKeyList = HashMap<String, ArcSwap<CertifiedKey>>;
 
@@ -32,28 +33,17 @@ pub struct IpcCerts {
 
 pub struct TlsConfig<'a> {
     certs: &'a Vec<IpcCerts>,
-    paths_to_watch: Vec<PathBuf>,
 }
 
 impl<'a> TlsConfig<'a> {
     pub fn new(certs: &'a Vec<IpcCerts>) -> TlsConfig<'a> {
-        TlsConfig {
-            certs,
-            paths_to_watch: Vec::new(),
-        }
+        TlsConfig { certs }
     }
 
     pub fn get_certified_key_list(&mut self) -> CertifiedKeyList {
         let mut ck_list: CertifiedKeyList = HashMap::new();
 
         for cert in self.certs.iter() {
-            // let path = Path::new(&cert.cert);
-            // let directory = path.parent().unwrap();
-            // let pathbuf = directory.to_path_buf();
-            // if !self.paths_to_watch.contains(&pathbuf) {
-            //     self.paths_to_watch.push(pathbuf);
-            // }
-
             add_certificate_to_certified_key_list(cert, &mut ck_list);
         }
 
@@ -71,40 +61,50 @@ impl<'a> TlsConfig<'a> {
 
         config_tls
     }
+}
 
-    // Start to watch for certificates changes.
-    // Run it in a separate task.
-    pub async fn watch_certs(&self, ck_list: Arc<CertifiedKeyList>) {
-        tracing::info!("Watch certificates paths : {:?}", self.paths_to_watch);
+// Start to watch for certificates changes.
+// Run it in a separate task.
+pub async fn watch_certs(paths_to_watch: &Vec<PathBuf>, port: u16, stream: Arc<Mutex<UnixStream>>) {
+    println!("Watch certificates paths : {:?}", paths_to_watch);
 
-        let (mut tx, mut rx) = channel(1);
+    let (mut tx, mut rx) = channel(1);
 
-        let mut watcher = RecommendedWatcher::new(
-            move |res| futures::executor::block_on(async { tx.send(res).await.unwrap() }),
-            notify::Config::default(),
-        )
-        .unwrap();
+    let mut watcher = RecommendedWatcher::new(
+        move |res| futures::executor::block_on(async { tx.send(res).await.unwrap() }),
+        notify::Config::default(),
+    )
+    .unwrap();
 
-        for path in &self.paths_to_watch {
-            watcher
-                .watch(path, notify::RecursiveMode::Recursive)
-                .unwrap();
-        }
+    for path in paths_to_watch {
+        watcher
+            .watch(path, notify::RecursiveMode::Recursive)
+            .unwrap();
+    }
 
-        while let Some(res) = rx.next().await {
-            match res {
-                Ok(event) => {
-                    if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                        tracing::warn!("File changed: {}", event.paths[0].display());
+    while let Some(res) = rx.next().await {
+        match res {
+            Ok(event) => {
+                if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
+                    println!("[Parent] File changed: {}", event.paths[0].display());
 
-                        for cert in self.certs.iter() {
-                            reload_certificates(cert, &ck_list);
-                        }
-                    }
+                    let message = ipc::IpcMessage {
+                        kind: "reload".to_string(),
+                        key: Some(port.to_string()),
+                        payload: "Reloaded".to_string(),
+                    };
+
+                    ipc::send_ipc_message(stream.clone(), message)
+                        .await
+                        .unwrap();
+
+                    // for cert in self.certs.iter() {
+                    //     reload_certificates(cert, &ck_list);
+                    // }
                 }
-
-                Err(e) => tracing::error!("watch error: {:?}", e),
             }
+
+            Err(e) => eprintln!("watch error: {:?}", e),
         }
     }
 }
@@ -159,10 +159,6 @@ fn convert_to_wildcard(server_name: &str) -> String {
         .collect();
 
     wildcard_name.join(".")
-}
-
-fn error(err: String) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
 }
 
 fn add_certificate_to_certified_key_list(cert: &IpcCerts, ck_list: &mut CertifiedKeyList) {
@@ -239,11 +235,3 @@ fn load_private_key(buf: &Vec<u8>) -> io::Result<PrivateKeyDer<'static>> {
     // Load and return a single private key.
     rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
 }
-
-// fn load_cert_buffer(filename: &str) -> Vec<u8> {
-//     let certfile = File::open(filename).unwrap();
-//     let mut reader = BufReader::new(certfile);
-//     let buffer = reader.fill_buf().unwrap();
-//
-//     buffer.to_vec()
-// }

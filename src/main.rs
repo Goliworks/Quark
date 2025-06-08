@@ -8,12 +8,12 @@ mod utils;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use bincode::{Decode, Encode};
-use config::tls::{IpcCerts, SniCertResolver, TlsConfig};
+use config::tls::{self, IpcCerts, SniCertResolver, TlsConfig};
 use config::ServiceConfig;
 use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
@@ -25,6 +25,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
 use argh::FromArgs;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tokio_rustls::TlsAcceptor;
 use tracing::info;
@@ -80,7 +81,8 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Create a unix socket listener.
     let listener = tokio::net::UnixListener::bind(QUARK_SOCKET_PATH)?;
     println!("[Parent] Waiting for connection");
-    let (mut stream, _) = listener.accept().await?;
+    let (stream, _) = listener.accept().await?;
+    let stream = Arc::new(Mutex::new(stream));
     println!("[Parent] Connection accepted");
 
     // Get options from command line.
@@ -88,6 +90,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Load the config file.
     let service_config = ServiceConfig::build_from(options.config);
 
+    let mut paths_to_watch_list: HashMap<u16, Vec<PathBuf>> = HashMap::new();
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
 
     for (port, server) in &service_config.servers {
@@ -95,6 +98,15 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
             println!("[Parent] Server {} is configured with TLS", port);
             println!("[Parent] tls {:#?}", tls_certs);
             for cert in tls_certs {
+                // Add the certificates path to the list of paths to watch.
+                let path = Path::new(&cert.cert);
+                let directory = path.parent().unwrap();
+                let pathbuf = directory.to_path_buf();
+                let paths_to_watch = paths_to_watch_list.entry(*port).or_default();
+                if !paths_to_watch.contains(&pathbuf) {
+                    paths_to_watch.push(pathbuf);
+                }
+                // Read the certificate and the key.
                 let certfile = tokio::fs::read(cert.cert.as_str()).await?;
                 let keyfile = tokio::fs::read(cert.key.as_str()).await?;
                 let certs = IpcCerts {
@@ -106,19 +118,31 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    println!("[Parent] paths to watch {:#?}", paths_to_watch_list);
+
     // Send the config to the child process.
     let message = ipc::IpcMessage {
         kind: "config".to_string(),
+        key: None,
         payload: service_config,
     };
-    ipc::send_ipc_message(&mut stream, message).await?;
+    ipc::send_ipc_message(stream.clone(), message).await?;
 
     // Send the certs to the child process.
     let message = ipc::IpcMessage {
         kind: "certs".to_string(),
+        key: None,
         payload: cert_list,
     };
-    ipc::send_ipc_message(&mut stream, message).await?;
+    ipc::send_ipc_message(stream.clone(), message).await?;
+
+    // Watch certificates
+    for (port, paths_to_watch) in paths_to_watch_list {
+        let stream = Arc::clone(&stream);
+        tokio::task::spawn(async move {
+            tls::watch_certs(&paths_to_watch, port, stream).await;
+        });
+    }
 
     // Just a test to check if the main process is still alive.
     tokio::spawn(async move {
@@ -146,6 +170,15 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         ipc::receive_ipc_message::<HashMap<u16, Vec<IpcCerts>>>(&mut stream).await?;
     let tls_certs = message_certs.payload;
     let tls_certs = Arc::new(tls_certs);
+
+    // Watch for new message_sc
+    tokio::spawn(async move {
+        loop {
+            if let Ok(msg) = ipc::receive_ipc_message::<String>(&mut stream).await {
+                println!("[Child] Received: {:#?}", msg);
+            }
+        }
+    });
 
     // Get options from command line.
     let options: Options = argh::from_env();
@@ -196,7 +229,7 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         let service = async move {
             match server.tls {
                 // If server has TLS configuration, create a server for https.
-                Some(tls) => {
+                Some(_tls) => {
                     // Start the tls config.
 
                     let tls_certs = tls_certs.get(&port).unwrap();
@@ -206,15 +239,6 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         let mut guard = tls_config.lock().await;
                         Arc::new(guard.get_certified_key_list())
                     };
-
-                    let tls_config_clone = Arc::clone(&tls_config);
-                    let ck_list_clone = Arc::clone(&ck_list);
-
-                    // Start to watch for certificates changes.
-                    // tokio::task::spawn(async move {
-                    //     let guard = tls_config_clone.lock().await;
-                    //     guard.watch_certs(ck_list_clone).await;
-                    // });
 
                     // Generate the sni resolver pass it to the tls_config
                     // to get the rustls server config.

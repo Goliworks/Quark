@@ -1,17 +1,21 @@
+use std::sync::Arc;
+
 use bincode::{Decode, Encode};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
+    sync::Mutex,
 };
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Debug)]
 pub struct IpcMessage<T> {
     pub kind: String,
+    pub key: Option<String>,
     pub payload: T,
 }
 
 pub async fn send_ipc_message<T>(
-    stream: &mut UnixStream,
+    stream: Arc<Mutex<UnixStream>>, //UnixStream,
     message: IpcMessage<T>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
@@ -22,9 +26,9 @@ where
     // Get the size of the message in bytes.
     let message_size: [u8; 4] = (encoded_message.len() as u32).to_be_bytes();
     // First call. Send the size of the message to the child process. (4 bytes)
-    stream.write_all(&message_size).await?;
+    stream.lock().await.write_all(&message_size).await?;
     // Second call. Send the message to the child process.
-    stream.write_all(&encoded_message).await?;
+    stream.lock().await.write_all(&encoded_message).await?;
     Ok(())
 }
 
