@@ -78,13 +78,12 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                     paths_to_watch.push(pathbuf);
                 }
                 // Read the certificate and the key.
-                let certfile = tokio::fs::read(cert.cert.as_str()).await?;
-                let keyfile = tokio::fs::read(cert.key.as_str()).await?;
-                let certs = IpcCerts {
-                    cert: certfile,
-                    key: keyfile,
-                };
-                cert_list.entry(*port).or_default().push(certs);
+                match IpcCerts::build(&cert.cert, &cert.key).await {
+                    Ok(certs) => {
+                        cert_list.entry(*port).or_default().push(certs);
+                    }
+                    Err(e) => panic!("Error. {}", e),
+                }
             }
         }
     }

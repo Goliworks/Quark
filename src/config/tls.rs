@@ -27,12 +27,6 @@ use super::TlsCertificate;
 
 pub type CertifiedKeyList = HashMap<String, ArcSwap<CertifiedKey>>;
 
-#[derive(Encode, Decode, Debug)]
-pub struct IpcCerts {
-    pub cert: Vec<u8>,
-    pub key: Vec<u8>,
-}
-
 pub struct TlsConfig<'a> {
     certs: &'a Vec<IpcCerts>,
 }
@@ -66,7 +60,7 @@ impl<'a> TlsConfig<'a> {
 }
 
 // Start to watch for certificates changes.
-// Run it in a separate task.
+// Run it in a tokio task.
 pub async fn watch_certs(
     paths_to_watch: &Vec<PathBuf>,
     port: u16,
@@ -97,15 +91,16 @@ pub async fn watch_certs(
 
                     let mut cert_list: Vec<IpcCerts> = Vec::new();
                     for cert in certs.iter() {
-                        let certfile = tokio::fs::read(cert.cert.as_str()).await.unwrap();
-                        let keyfile = tokio::fs::read(cert.key.as_str()).await.unwrap();
-                        let certs = IpcCerts {
-                            cert: certfile,
-                            key: keyfile,
-                        };
-                        cert_list.push(certs);
+                        match IpcCerts::build(&cert.cert, &cert.key).await {
+                            Ok(certs) => cert_list.push(certs),
+                            Err(e) => eprintln!("Error. {}", e),
+                        }
                     }
 
+                    if cert_list.is_empty() {
+                        println!("[Parent] No certificates found");
+                        return;
+                    }
                     let message = ipc::IpcMessage {
                         kind: "reload".to_string(),
                         key: Some(port.to_string()),
@@ -248,4 +243,27 @@ fn load_private_key(buf: &Vec<u8>) -> io::Result<PrivateKeyDer<'static>> {
     let mut reader = BufReader::new(Cursor::new(buf));
     // Load and return a single private key.
     rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
+}
+
+// Struct to send certs via IPC.
+#[derive(Encode, Decode, Debug)]
+pub struct IpcCerts {
+    pub cert: Vec<u8>,
+    pub key: Vec<u8>,
+}
+
+impl IpcCerts {
+    pub async fn build(cert: &str, key: &str) -> Result<IpcCerts, String> {
+        let certfile = tokio::fs::read(cert)
+            .await
+            .map_err(|e| format!("Can't read the certificate {} : {}", cert, e))?;
+        let keyfile = tokio::fs::read(key)
+            .await
+            .map_err(|e| format!("Can't read the key {} : {}", key, e))?;
+
+        Ok(IpcCerts {
+            cert: certfile,
+            key: keyfile,
+        })
+    }
 }

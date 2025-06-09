@@ -55,7 +55,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Get options from command line.
     let options: Options = argh::from_env();
 
-    // Init logs.
+    // Init logs. Declare a var to keep the guard alive in this scope.
     let _guard = logs::start_logs(options.logs);
 
     info!("Starting server");
