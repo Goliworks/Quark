@@ -7,9 +7,6 @@ use http_body_util::{Full, StreamBody};
 use hyper::body::{Bytes, Frame, Incoming};
 use nix::unistd::{getuid, setgid, setgroups, setuid, Group, User};
 
-pub const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
-pub const DEFAULT_LOG_PATH: &str = "/var/log/quark";
-
 pub type BoxedFrameStream =
     Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
 

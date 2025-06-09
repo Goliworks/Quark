@@ -7,6 +7,8 @@ use tokio::{
     sync::Mutex,
 };
 
+pub const QUARK_SOCKET_PATH: &str = "/tmp/quark.sock";
+
 #[derive(Encode, Decode, Debug)]
 pub struct IpcMessage<T> {
     pub kind: String,

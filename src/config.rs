@@ -1,5 +1,6 @@
 pub mod tls;
 mod toml_model;
+use argh::FromArgs;
 use bincode::{Decode, Encode};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -18,6 +19,9 @@ const DEFAULT_SERVE_FILES: bool = false;
 const DEFAULT_BACKLOG: i32 = 1024;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
+
+const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
+const DEFAULT_LOG_PATH: &str = "/var/log/quark";
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ServiceConfig {
@@ -64,6 +68,21 @@ pub struct Redirection {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub code: u16,
+}
+
+#[derive(FromArgs)]
+#[argh(description = "certificates")]
+pub struct Options {
+    /// config file path.
+    #[argh(option, short = 'c', default = "DEFAULT_CONFIG_FILE_PATH.to_string()")]
+    pub config: String,
+    /// logs directory path
+    #[argh(option, short = 'l', default = "DEFAULT_LOG_PATH.to_string()")]
+    pub logs: String,
+
+    /// run as child process
+    #[argh(switch)]
+    _child_process: bool,
 }
 
 impl ServiceConfig {
