@@ -5,9 +5,30 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
     sync::Mutex,
+    time::{sleep, timeout, Duration},
 };
 
 pub const QUARK_SOCKET_PATH: &str = "/tmp/quark.sock";
+
+pub async fn connect_to_socket(socket_path: &str) -> Result<UnixStream, std::io::Error> {
+    // Try to connect to the socket for 5 seconds.
+    timeout(Duration::from_secs(5), async {
+        loop {
+            match UnixStream::connect(socket_path).await {
+                Ok(stream) => break Ok(stream),
+                // Retry after 100ms.
+                Err(_) => sleep(Duration::from_millis(100)).await,
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "Timed out connecting to socket",
+        ))
+    })
+}
 
 #[derive(Encode, Decode, Debug)]
 pub struct IpcMessage<T> {

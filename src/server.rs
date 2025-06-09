@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
-use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
@@ -13,7 +12,6 @@ use hyper_util::{
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
-use tokio::time::sleep;
 use tokio_rustls::TlsAcceptor;
 use tracing::info;
 
@@ -25,9 +23,13 @@ use crate::{logs, proxy_handler};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
-    sleep(Duration::from_millis(100)).await;
-    // Connect to the parent process.
-    let mut stream = tokio::net::UnixStream::connect(QUARK_SOCKET_PATH).await?;
+    let mut stream = match ipc::connect_to_socket(QUARK_SOCKET_PATH).await {
+        Ok(stream) => stream,
+        Err(e) => {
+            println!("Failed to connect to parent process: {}", e);
+            std::process::exit(1);
+        }
+    };
     // Get the size of the config from the parent process.
 
     let message_sc = ipc::receive_ipc_message::<ServiceConfig>(&mut stream).await?;
@@ -41,7 +43,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let tls_certs = Arc::new(tls_certs);
 
     // Watch for certificates changes.
-    let (tx, _) = tokio::sync::broadcast::channel::<Arc<IpcMessage<Vec<IpcCerts>>>>(10);
+    let (tx, _) = tokio::sync::broadcast::channel::<Arc<IpcMessage<Vec<IpcCerts>>>>(16);
     let tx_clone = tx.clone();
     tokio::spawn(async move {
         loop {
