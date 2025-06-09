@@ -23,6 +23,8 @@ use futures::channel::mpsc::channel;
 
 use crate::ipc;
 
+use super::TlsCertificate;
+
 pub type CertifiedKeyList = HashMap<String, ArcSwap<CertifiedKey>>;
 
 #[derive(Encode, Decode, Debug)]
@@ -65,7 +67,12 @@ impl<'a> TlsConfig<'a> {
 
 // Start to watch for certificates changes.
 // Run it in a separate task.
-pub async fn watch_certs(paths_to_watch: &Vec<PathBuf>, port: u16, stream: Arc<Mutex<UnixStream>>) {
+pub async fn watch_certs(
+    paths_to_watch: &Vec<PathBuf>,
+    port: u16,
+    stream: Arc<Mutex<UnixStream>>,
+    certs: Vec<TlsCertificate>,
+) {
     println!("Watch certificates paths : {:?}", paths_to_watch);
 
     let (mut tx, mut rx) = channel(1);
@@ -88,19 +95,26 @@ pub async fn watch_certs(paths_to_watch: &Vec<PathBuf>, port: u16, stream: Arc<M
                 if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
                     println!("[Parent] File changed: {}", event.paths[0].display());
 
+                    let mut cert_list: Vec<IpcCerts> = Vec::new();
+                    for cert in certs.iter() {
+                        let certfile = tokio::fs::read(cert.cert.as_str()).await.unwrap();
+                        let keyfile = tokio::fs::read(cert.key.as_str()).await.unwrap();
+                        let certs = IpcCerts {
+                            cert: certfile,
+                            key: keyfile,
+                        };
+                        cert_list.push(certs);
+                    }
+
                     let message = ipc::IpcMessage {
                         kind: "reload".to_string(),
                         key: Some(port.to_string()),
-                        payload: "Reloaded".to_string(),
+                        payload: cert_list,
                     };
 
                     ipc::send_ipc_message(stream.clone(), message)
                         .await
                         .unwrap();
-
-                    // for cert in self.certs.iter() {
-                    //     reload_certificates(cert, &ck_list);
-                    // }
                 }
             }
 
@@ -169,7 +183,7 @@ fn add_certificate_to_certified_key_list(cert: &IpcCerts, ck_list: &mut Certifie
     })
 }
 
-fn reload_certificates(cert: &IpcCerts, ck_list: &CertifiedKeyList) {
+pub fn reload_certificates(cert: &IpcCerts, ck_list: Arc<CertifiedKeyList>) {
     let (domains, ck) = get_domains_and_ck(cert);
 
     domains.iter().for_each(|domain| {

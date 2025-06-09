@@ -13,7 +13,7 @@ use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use config::tls::{self, IpcCerts, SniCertResolver, TlsConfig};
+use config::tls::{self, reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
 use config::ServiceConfig;
 use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
@@ -21,6 +21,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
+use ipc::IpcMessage;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
@@ -92,9 +93,11 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut paths_to_watch_list: HashMap<u16, Vec<PathBuf>> = HashMap::new();
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
+    let mut tls_servers: HashMap<u16, Vec<config::TlsCertificate>> = HashMap::new();
 
     for (port, server) in &service_config.servers {
         if let Some(tls_certs) = &server.tls {
+            tls_servers.insert(*port, tls_certs.clone());
             println!("[Parent] Server {} is configured with TLS", port);
             println!("[Parent] tls {:#?}", tls_certs);
             for cert in tls_certs {
@@ -139,18 +142,11 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Watch certificates
     for (port, paths_to_watch) in paths_to_watch_list {
         let stream = Arc::clone(&stream);
+        let certs = tls_servers.get(&port).unwrap().clone();
         tokio::task::spawn(async move {
-            tls::watch_certs(&paths_to_watch, port, stream).await;
+            tls::watch_certs(&paths_to_watch, port, stream, certs).await;
         });
     }
-
-    // Just a test to check if the main process is still alive.
-    tokio::spawn(async move {
-        loop {
-            println!("[Parent] Send: ping");
-            sleep(Duration::from_secs(5)).await;
-        }
-    });
     Ok(())
 }
 
@@ -171,11 +167,14 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let tls_certs = message_certs.payload;
     let tls_certs = Arc::new(tls_certs);
 
-    // Watch for new message_sc
+    // Watch for certificates changes.
+    let (tx, _) = tokio::sync::broadcast::channel::<Arc<IpcMessage<Vec<IpcCerts>>>>(10);
+    let tx_clone = tx.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok(msg) = ipc::receive_ipc_message::<String>(&mut stream).await {
-                println!("[Child] Received: {:#?}", msg);
+            if let Ok(msg) = ipc::receive_ipc_message::<Vec<IpcCerts>>(&mut stream).await {
+                let msg = Arc::new(msg);
+                tx_clone.send(msg).unwrap();
             }
         }
     });
@@ -220,6 +219,7 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         let client = Arc::clone(&client);
         let max_conns = Arc::clone(&max_conns);
         let max_req = Arc::clone(&max_req);
+        let tx = tx.clone();
 
         let tls_certs = Arc::clone(&tls_certs).clone();
 
@@ -232,6 +232,8 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                 Some(_tls) => {
                     // Start the tls config.
 
+                    let mut rx = tx.subscribe();
+
                     let tls_certs = tls_certs.get(&port).unwrap();
 
                     let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
@@ -239,6 +241,20 @@ async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         let mut guard = tls_config.lock().await;
                         Arc::new(guard.get_certified_key_list())
                     };
+
+                    // Spawn a task to watch for certificates changes.
+                    let port_string = port.to_string();
+                    let ck_list_clone = ck_list.clone();
+                    tokio::spawn(async move {
+                        while let Ok(msg) = rx.recv().await {
+                            if msg.key.as_ref().unwrap() == &port_string {
+                                println!("[TLS] New certificate for port {}", port);
+                                msg.payload.iter().for_each(|cert| {
+                                    reload_certificates(cert, ck_list_clone.clone());
+                                })
+                            }
+                        }
+                    });
 
                     // Generate the sni resolver pass it to the tls_config
                     // to get the rustls server config.
