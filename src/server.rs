@@ -17,13 +17,14 @@ use tracing::info;
 
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
 use crate::config::{Options, ServiceConfig};
-use crate::ipc::{self, IpcMessage, QUARK_SOCKET_PATH};
+use crate::ipc::{self, IpcMessage};
 use crate::utils::{self, format_ip};
 use crate::{logs, proxy_handler};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
-    let mut stream = match ipc::connect_to_socket(QUARK_SOCKET_PATH).await {
+    let socket_path = ipc::get_socket_path();
+    let mut stream = match ipc::connect_to_socket(&socket_path).await {
         Ok(stream) => stream,
         Err(e) => {
             println!("Failed to connect to parent process: {}", e);

@@ -13,7 +13,6 @@ use std::sync::Arc;
 
 use config::tls::{self, IpcCerts};
 use config::{Options, ServiceConfig};
-use ipc::QUARK_SOCKET_PATH;
 
 use tokio::sync::Mutex;
 
@@ -26,9 +25,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If not, run a new process flagged as a child process.
 
+    let socket_path = ipc::get_socket_path();
     // Clean the socket file if it exists.
-    if std::path::Path::new(QUARK_SOCKET_PATH).exists() {
-        std::fs::remove_file(QUARK_SOCKET_PATH)?;
+    if std::path::Path::new(&socket_path).exists() {
+        println!("[Main Process] Removing socket file");
+        std::fs::remove_file(&socket_path)?;
     }
 
     // Take the rest of the arguments and pass them to the child process.
@@ -48,11 +49,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Create a unix socket listener.
-    let listener = tokio::net::UnixListener::bind(QUARK_SOCKET_PATH)?;
-    println!("[Parent] Waiting for connection");
+    let socket_path = ipc::get_socket_path();
+    let listener = tokio::net::UnixListener::bind(&socket_path)
+        .map_err(|e| format!("Can't use the socket at {} : {}", &socket_path, e))?;
+    println!("[Main Process] Waiting for connection");
     let (stream, _) = listener.accept().await?;
     let stream = Arc::new(Mutex::new(stream));
-    println!("[Parent] Connection accepted");
+    println!("[Main Process] Connection accepted");
 
     // Get options from command line.
     let options: Options = argh::from_env();
@@ -66,8 +69,8 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     for (port, server) in &service_config.servers {
         if let Some(tls_certs) = &server.tls {
             tls_servers.insert(*port, tls_certs.clone());
-            println!("[Parent] Server {} is configured with TLS", port);
-            println!("[Parent] tls {:#?}", tls_certs);
+            println!("[Main Process] Server {} is configured with TLS", port);
+            println!("[Main Process] tls {:#?}", tls_certs);
             for cert in tls_certs {
                 // Add the certificates path to the list of paths to watch.
                 let path = Path::new(&cert.cert);
@@ -88,7 +91,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("[Parent] paths to watch {:#?}", paths_to_watch_list);
+    println!("[Main Process] paths to watch {:#?}", paths_to_watch_list);
 
     // Send the config to the child process.
     let message = ipc::IpcMessage {

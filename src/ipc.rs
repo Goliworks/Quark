@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use bincode::{Decode, Encode};
+use nix::unistd::getuid;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::UnixStream,
@@ -8,7 +9,23 @@ use tokio::{
     time::{sleep, timeout, Duration},
 };
 
-pub const QUARK_SOCKET_PATH: &str = "/tmp/quark.sock";
+const QUARK_SOCKET_NAME: &str = "quark.sock";
+const QUARK_SOCKET_PATH: &str = "/run/quark/";
+const QUARK_TMP_SOCKET_PATH: &str = "/tmp/";
+
+pub fn get_socket_path() -> String {
+    if getuid().is_root() {
+        return PathBuf::from(QUARK_SOCKET_PATH)
+            .join(QUARK_SOCKET_NAME)
+            .to_string_lossy()
+            .to_string();
+    }
+
+    PathBuf::from(QUARK_TMP_SOCKET_PATH)
+        .join(QUARK_SOCKET_NAME)
+        .to_string_lossy()
+        .to_string()
+}
 
 pub async fn connect_to_socket(socket_path: &str) -> Result<UnixStream, std::io::Error> {
     // Try to connect to the socket for 5 seconds.

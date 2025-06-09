@@ -87,7 +87,7 @@ pub async fn watch_certs(
         match res {
             Ok(event) => {
                 if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                    println!("[Parent] File changed: {}", event.paths[0].display());
+                    println!("[Main Process] File changed: {}", event.paths[0].display());
 
                     let mut cert_list: Vec<IpcCerts> = Vec::new();
                     for cert in certs.iter() {
