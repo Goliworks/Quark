@@ -22,7 +22,7 @@ use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConf
 use crate::config::{Options, ServiceConfig};
 use crate::ipc::{self, IpcMessage};
 use crate::logs;
-use crate::utils::{self, format_ip};
+use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
@@ -256,7 +256,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Drop privileges from root to www-data.
     // If we are not root, it wont do anything.
-    match utils::drop_privileges("www-data") {
+    match drop_privileges(QUARK_USER_AND_GROUP) {
         Ok(msg) => tracing::warn!("{}", msg),
         Err(err) => return Err(err),
     }

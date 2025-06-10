@@ -6,13 +6,17 @@ mod server;
 mod utils;
 
 use std::collections::HashMap;
+use std::fs::{set_permissions, Permissions};
+use std::os::unix::fs::{chown, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use config::tls::{self, IpcCerts};
 use config::{Options, ServiceConfig};
 
+use nix::unistd::{getuid, User};
 use tokio::sync::Mutex;
+use utils::QUARK_USER_AND_GROUP;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -50,6 +54,22 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     let socket_path = ipc::get_socket_path();
     let listener = tokio::net::UnixListener::bind(&socket_path)
         .map_err(|e| format!("Can't use the socket at {} : {}", &socket_path, e))?;
+
+    if getuid().is_root() {
+        // Change the owner and permissions of the socket file.
+        let quark_user = User::from_name(QUARK_USER_AND_GROUP)
+            .expect("User lookup failed")
+            .expect("User not found");
+
+        let path = Path::new(&socket_path);
+        chown(
+            path,
+            Some(quark_user.uid.as_raw()),
+            Some(quark_user.gid.as_raw()),
+        )?;
+        set_permissions(&socket_path, Permissions::from_mode(0o600))?;
+    }
+
     println!("[Main Process] Waiting for connection");
     let (stream, _) = listener.accept().await?;
     let stream = Arc::new(Mutex::new(stream));
