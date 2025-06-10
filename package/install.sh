@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 QUARK_USER="quark"
 QUARK_BIN="quark"
@@ -7,6 +8,8 @@ SOCKET_PATH="/run/quark"
 CONFIG_PATH="/etc/quark"
 CONFIG_FILE="config.toml"
 CONFIG_FILE_EXAMPLE="config.example.toml"
+SERVICE_FILE="quark.service"
+SERVICE_DESTINATION="/etc/systemd/system"
 UPDATING=false
 
 echo "Installing Quark"
@@ -66,6 +69,14 @@ if [ -f "$CONFIG_FILE_EXAMPLE" ]; then
   cmod 600 "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
   echo "Example configuration file created"
 fi
+
+# Create systemd service
+cp "$SERVICE_FILE" "$SERVICE_DESTINATION/"
+chown root:root "$SERVICE_DESTINATION/$SERVICE_FILE"
+cmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
+systemctl daemon-reload
+systemctl enable quark
+systemctl restart quark
 
 # Finish
 if $UPDATING; then

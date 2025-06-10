@@ -1,0 +1,12 @@
+[Unit]
+Description=Quark Reverse Proxy
+After=network.target nss-lookup.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/quark
+Restart=on-failure
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

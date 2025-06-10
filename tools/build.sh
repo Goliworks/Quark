@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 TMP_PACKAGE_DIR="tmp_package"
 RELEASE_PATH="target/release/quark"
@@ -34,6 +35,7 @@ VERSION=$(awk '
   }
 ' Cargo.toml)
 
+# Create package
 cp -r package/* "$TMP_PACKAGE_DIR/"
 
 mkdir -p dist
