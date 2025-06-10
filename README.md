@@ -10,7 +10,7 @@ Quark is a fast reverse proxy written in Rust.
 - HTTP/2 by default for HTTPS connections.
 - Simple capabilities for serving static files.
 
-## Minimum Support Rust Version
+## Minimum Supported Rust Version
 
 The current MSRV is `1.85`.
 

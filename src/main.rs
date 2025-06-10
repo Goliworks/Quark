@@ -2,8 +2,6 @@ mod config;
 mod http_response;
 mod ipc;
 mod logs;
-mod proxy_handler;
-mod serve_file;
 mod server;
 mod utils;
 

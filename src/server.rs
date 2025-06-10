@@ -1,3 +1,6 @@
+mod handler;
+mod serve_file;
+
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
@@ -18,8 +21,8 @@ use tracing::info;
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
 use crate::config::{Options, ServiceConfig};
 use crate::ipc::{self, IpcMessage};
+use crate::logs;
 use crate::utils::{self, format_ip};
-use crate::{logs, proxy_handler};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
@@ -172,7 +175,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
                         // This service will handle the connection.
                         let service = service_fn(move |req| {
-                            proxy_handler::proxy_handler(
+                            handler::handler(
                                 req,
                                 server_params.clone(),
                                 max_req.clone(),
@@ -228,7 +231,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
                     // This service will handle the connection.
                     let service = service_fn(move |req| {
-                        proxy_handler::proxy_handler(
+                        handler::handler(
                             req,
                             server_params.clone(),
                             max_req.clone(),

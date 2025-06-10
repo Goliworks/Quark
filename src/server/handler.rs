@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use crate::{
     config::ServerParams,
     http_response,
-    serve_file::serve_file,
+    server::serve_file,
     utils::{self, ProxyHandlerBody},
 };
 
@@ -20,7 +20,7 @@ use crate::{
     fields(ip = %client_ip),
     skip(req, params, max_req, client, client_ip, scheme)
 )]
-pub async fn proxy_handler(
+pub async fn handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
     max_req: Arc<tokio::sync::Semaphore>,
@@ -157,7 +157,7 @@ pub async fn proxy_handler(
                 Request::from_parts(parts, body)
             } else {
                 // Serve files. Return directly the response.
-                let sf = serve_file(&uri).await;
+                let sf = serve_file::serve_file(&uri).await;
                 return Ok(sf);
             }
         }
