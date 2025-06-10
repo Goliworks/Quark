@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut child_args: Vec<String> = std::env::args().skip(1).collect();
     child_args.insert(0, "--child-process".to_string());
 
-    // Run the child process.
+    // Create the child process.
     let mut child = std::process::Command::new(std::env::current_exe()?)
         .args(child_args)
         .spawn()?;

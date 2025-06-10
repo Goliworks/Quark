@@ -166,11 +166,8 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         };
 
                         let client_ip = format_ip(address.ip());
-
                         let acceptor = tls_acceptor.clone();
-
                         let server_params = Arc::clone(&server_params);
-
                         let max_req = max_req.clone();
 
                         // This service will handle the connection.

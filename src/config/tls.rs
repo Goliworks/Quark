@@ -59,65 +59,6 @@ impl<'a> TlsConfig<'a> {
     }
 }
 
-// Start to watch for certificates changes.
-// Run it in a tokio task.
-pub async fn watch_certs(
-    paths_to_watch: &Vec<PathBuf>,
-    port: u16,
-    stream: Arc<Mutex<UnixStream>>,
-    certs: Vec<TlsCertificate>,
-) {
-    println!("Watch certificates paths : {:?}", paths_to_watch);
-
-    let (mut tx, mut rx) = channel(1);
-
-    let mut watcher = RecommendedWatcher::new(
-        move |res| futures::executor::block_on(async { tx.send(res).await.unwrap() }),
-        notify::Config::default(),
-    )
-    .unwrap();
-
-    for path in paths_to_watch {
-        watcher
-            .watch(path, notify::RecursiveMode::Recursive)
-            .unwrap();
-    }
-
-    while let Some(res) = rx.next().await {
-        match res {
-            Ok(event) => {
-                if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                    println!("[Main Process] File changed: {}", event.paths[0].display());
-
-                    let mut cert_list: Vec<IpcCerts> = Vec::new();
-                    for cert in certs.iter() {
-                        match IpcCerts::build(&cert.cert, &cert.key).await {
-                            Ok(certs) => cert_list.push(certs),
-                            Err(e) => eprintln!("Error. {}", e),
-                        }
-                    }
-
-                    if cert_list.is_empty() {
-                        println!("[Parent] No certificates found");
-                        return;
-                    }
-                    let message = ipc::IpcMessage {
-                        kind: "reload".to_string(),
-                        key: Some(port.to_string()),
-                        payload: cert_list,
-                    };
-
-                    ipc::send_ipc_message(stream.clone(), message)
-                        .await
-                        .unwrap();
-                }
-            }
-
-            Err(e) => eprintln!("watch error: {:?}", e),
-        }
-    }
-}
-
 // Custom SNI resolver.
 #[derive(Debug)]
 pub struct SniCertResolver {
@@ -229,20 +170,77 @@ fn extract_domains_from_x509(x509: &X509Certificate) -> Vec<String> {
     domain_names
 }
 
-// Load public certificate from file.
+// Load public certificate from buffer.
 fn load_certs(buf: &Vec<u8>) -> io::Result<Vec<CertificateDer<'static>>> {
-    // Open certificate file.
     let mut reader = BufReader::new(Cursor::new(buf));
     // Load and return certificate.
     rustls_pemfile::certs(&mut reader).collect()
 }
 
-// Load private key from file.
+// Load private key from buffer.
 fn load_private_key(buf: &Vec<u8>) -> io::Result<PrivateKeyDer<'static>> {
-    // Open keyfile.
     let mut reader = BufReader::new(Cursor::new(buf));
     // Load and return a single private key.
     rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
+}
+
+// Start to watch for certificates changes.
+// Run it in a tokio task.
+pub async fn watch_certs(
+    paths_to_watch: &Vec<PathBuf>,
+    port: u16,
+    stream: Arc<Mutex<UnixStream>>,
+    certs: Vec<TlsCertificate>,
+) {
+    println!("Watch certificates paths : {:?}", paths_to_watch);
+
+    let (mut tx, mut rx) = channel(1);
+
+    let mut watcher = RecommendedWatcher::new(
+        move |res| futures::executor::block_on(async { tx.send(res).await.unwrap() }),
+        notify::Config::default(),
+    )
+    .unwrap();
+
+    for path in paths_to_watch {
+        watcher
+            .watch(path, notify::RecursiveMode::Recursive)
+            .unwrap();
+    }
+
+    while let Some(res) = rx.next().await {
+        match res {
+            Ok(event) => {
+                if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
+                    println!("[Main Process] File changed: {}", event.paths[0].display());
+
+                    let mut cert_list: Vec<IpcCerts> = Vec::new();
+                    for cert in certs.iter() {
+                        match IpcCerts::build(&cert.cert, &cert.key).await {
+                            Ok(certs) => cert_list.push(certs),
+                            Err(e) => eprintln!("Error. {}", e),
+                        }
+                    }
+
+                    if cert_list.is_empty() {
+                        println!("[Parent] No certificates found");
+                        return;
+                    }
+                    let message = ipc::IpcMessage {
+                        kind: "reload".to_string(),
+                        key: Some(port.to_string()),
+                        payload: cert_list,
+                    };
+
+                    ipc::send_ipc_message(stream.clone(), message)
+                        .await
+                        .unwrap();
+                }
+            }
+
+            Err(e) => eprintln!("watch error: {:?}", e),
+        }
+    }
 }
 
 // Struct to send certs via IPC.

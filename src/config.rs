@@ -2,6 +2,7 @@ pub mod tls;
 mod toml_model;
 use argh::FromArgs;
 use bincode::{Decode, Encode};
+use hyper::StatusCode;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -235,9 +236,9 @@ fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::
                     location: red.target.clone(),
                     strict_uri: strict_mode,
                     code: if red.temporary.unwrap_or(DEFAULT_TEMPORARY_REDIRECT) {
-                        302
+                        StatusCode::TEMPORARY_REDIRECT.as_u16()
                     } else {
-                        301
+                        StatusCode::PERMANENT_REDIRECT.as_u16()
                     },
                 },
             );
@@ -275,7 +276,7 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
         Redirection {
             location: target,
             strict_uri: false,
-            code: 302,
+            code: StatusCode::MOVED_PERMANENTLY.as_u16(),
         },
     );
 }
