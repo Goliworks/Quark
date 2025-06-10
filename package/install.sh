@@ -58,7 +58,7 @@ if [ ! -f "$CONFIG_PATH/$CONFIG_FILE" ]; then
   touch "$CONFIG_PATH/$CONFIG_FILE"
   echo "# Configuration file for Quark" >"$CONFIG_PATH/$CONFIG_FILE"
   chown root:root "$CONFIG_PATH/$CONFIG_FILE"
-  cmod 600 "$CONFIG_PATH/$CONFIG_FILE"
+  chmod 600 "$CONFIG_PATH/$CONFIG_FILE"
   echo "Configuration file created"
 fi
 
@@ -66,14 +66,14 @@ fi
 if [ -f "$CONFIG_FILE_EXAMPLE" ]; then
   cp "$CONFIG_FILE_EXAMPLE" "$CONFIG_PATH/"
   chown root:root "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
-  cmod 600 "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
+  chmod 600 "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
   echo "Example configuration file created"
 fi
 
 # Create systemd service
 cp "$SERVICE_FILE" "$SERVICE_DESTINATION/"
 chown root:root "$SERVICE_DESTINATION/$SERVICE_FILE"
-cmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
+chmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable quark
 systemctl restart quark
