@@ -1,0 +1,37 @@
+[global] # Optional: Global configuration for the server.
+backlog = 1024 # Optional: Maximum number of pending connections the server can queue (default: 1024).
+max_connection = 1024 # Optional: Maximum number of simultaneous client connections allowed (default: 1024).
+max_request = 100 # Optional: Maximum number of simultaneous HTTP requests allowed (default: 100).
+
+[services.your_service_name] # Define a new service to be handled by the server.
+domain = "yourservice.com" # Public domain name for this service.
+port = 8080 # Optional: Port used for HTTP connections (default: 80).
+tls.certificate = "/path/to/your/certificate.pem" # Optional: Path to the TLS/SSL certificate file.
+tls.key = "/path/to/your/key.pem" # Optional: Path to the private key file for the TLS/SSL certificate.
+tls.port = 8443 # Optional: Port used for HTTPS connections (default: 443).
+tls.redirection = true # Optional: If true, automatically redirect HTTP requests to HTTPS (default: true).
+proxy_timeout = 60 # Optional: Timeout in seconds for forwarding requests to the backend (default: 60s).
+
+# Route all incoming traffic to a backend server.
+# At least one location or redirection must be defined for each service.
+[services.your_service_name.locations]
+source = "/*" # Match all incoming requests under the root path.
+target = "http://127.0.0.1:8080" # Forward matched requests to this backend server.
+
+# Serve static files for a specific route.
+[services.your_service_name.locations]
+source = "/static/*" # Match all requests starting with /static/.
+target = "/path/to/your/files" # Serve files from this local directory.
+serve_files = true # Optional: Enable file serving for this route (default: false).
+
+# Example of a wildcard redirection that preserves the path suffix.
+[services.your_service_name.redirections]
+source = "/redirect/*" # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
+target = "http://127.0.0.1:8081/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
+temporary = true # Optional: Use a temporary (302) redirect. (default: false) 
+
+# Example of an exact path redirection.
+[services.your_service_name.redirections]
+source = "/static-path/" # Match only the exact path /static-path/. Does not match /static-path/anything.
+target = "http://127.0.0.1:8082/static/" # The path is replaced exactly with this URL, without appending any suffix.
+temporary = false # Optional: Use a permanent (301) redirect. (default: false)

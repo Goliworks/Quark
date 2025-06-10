@@ -6,7 +6,7 @@ QUARK_BIN_DESTINATION="/usr/sbin"
 SOCKET_PATH="/run/quark"
 CONFIG_PATH="/etc/quark"
 CONFIG_FILE="config.toml"
-CONFIG_FILE_EXAMPLE="example.config.toml"
+CONFIG_FILE_EXAMPLE="config.example.toml"
 UPDATING=false
 
 echo "Installing Quark"
@@ -39,6 +39,9 @@ if [ -f "$QUARK_BIN" ]; then
     echo "File $QUARK_BIN copied"
   fi
   chmod 755 "$QUARK_BIN_DESTINATION/$QUARK_BIN"
+else
+  echo "Error : $QUARK_BIN binary not found in $PWD"
+  exit 1
 fi
 
 # Create configuration directory.
