@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::{self, BufReader, Cursor};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
@@ -14,7 +15,7 @@ use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::UnixStream;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use x509_parser::parse_x509_certificate;
 use x509_parser::pem::parse_x509_pem;
 use x509_parser::prelude::{GeneralName, ParsedExtension, X509Certificate};
@@ -208,38 +209,59 @@ pub async fn watch_certs(
             .unwrap();
     }
 
-    while let Some(res) = rx.next().await {
-        match res {
-            Ok(event) => {
-                if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-                    println!("[Main Process] File changed: {}", event.paths[0].display());
+    // Prepare debounce
+    let notify = Arc::new(Notify::new());
+    let notify_clone = Arc::clone(&notify);
+    let debouncing = Arc::new(AtomicBool::new(false));
+    let debouncing_clone = debouncing.clone();
 
-                    let mut cert_list: Vec<IpcCerts> = Vec::new();
-                    for cert in certs.iter() {
-                        match IpcCerts::build(&cert.cert, &cert.key).await {
-                            Ok(certs) => cert_list.push(certs),
-                            Err(e) => eprintln!("Error. {}", e),
+    // Watch if file changed
+    tokio::spawn(async move {
+        while let Some(res) = rx.next().await {
+            match res {
+                Ok(event) => {
+                    if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
+                        println!("[Main Process] File changed: {}", event.paths[0].display());
+                        if !debouncing.load(Ordering::Relaxed) {
+                            // Launch debouncing to avoid to send the files multiple times
+                            notify.notify_one();
+                            debouncing.store(true, Ordering::Relaxed);
                         }
                     }
-
-                    if cert_list.is_empty() {
-                        println!("[Parent] No certificates found");
-                        return;
-                    }
-                    let message = ipc::IpcMessage {
-                        kind: "reload".to_string(),
-                        key: Some(port.to_string()),
-                        payload: cert_list,
-                    };
-
-                    ipc::send_ipc_message(stream.clone(), message)
-                        .await
-                        .unwrap();
                 }
-            }
 
-            Err(e) => eprintln!("watch error: {:?}", e),
+                Err(e) => eprintln!("watch error: {:?}", e),
+            }
         }
+    });
+
+    // Debounce
+    loop {
+        notify_clone.notified().await;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        // Reload certificates
+        let mut cert_list: Vec<IpcCerts> = Vec::new();
+        for cert in certs.iter() {
+            match IpcCerts::build(&cert.cert, &cert.key).await {
+                Ok(certs) => cert_list.push(certs),
+                Err(e) => eprintln!("Error. {}", e),
+            }
+        }
+
+        if cert_list.is_empty() {
+            println!("[Parent] No certificates found");
+            return;
+        }
+        let message = ipc::IpcMessage {
+            kind: "reload".to_string(),
+            key: Some(port.to_string()),
+            payload: cert_list,
+        };
+
+        ipc::send_ipc_message(stream.clone(), message)
+            .await
+            .unwrap();
+        debouncing_clone.store(false, Ordering::Relaxed);
     }
 }
 
