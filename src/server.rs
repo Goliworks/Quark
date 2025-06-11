@@ -147,15 +147,6 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
                     loop {
-                        let client = Arc::clone(&client);
-                        let permit = match max_conns.clone().try_acquire_owned() {
-                            Ok(p) => p,
-                            Err(_) => {
-                                tracing::error!("Too many TLS connection. Connection closed.");
-                                continue;
-                            }
-                        };
-
                         let res = listener.accept().await;
                         let (stream, address) = match res {
                             Ok(res) => res,
@@ -167,8 +158,10 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
                         let client_ip = format_ip(address.ip());
                         let acceptor = tls_acceptor.clone();
+                        let client = Arc::clone(&client);
                         let server_params = Arc::clone(&server_params);
-                        let max_req = max_req.clone();
+                        let max_req = Arc::clone(&max_req);
+                        let max_conns = Arc::clone(&max_conns);
 
                         // This service will handle the connection.
                         let service = service_fn(move |req| {
@@ -184,6 +177,14 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
                         let http = http.clone();
                         tokio::task::spawn(async move {
+                            let _permit = match max_conns.clone().try_acquire_owned() {
+                                Ok(p) => p,
+                                Err(_) => {
+                                    tracing::error!("Too many TLS connection. Connection closed.");
+                                    return;
+                                }
+                            };
+
                             let stream = match acceptor.accept(stream).await {
                                 Ok(stream) => stream,
                                 Err(err) => {
@@ -196,23 +197,11 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                             {
                                 tracing::error!("failed to serve connection: {err:#}");
                             }
-                            drop(permit);
                         });
                     }
                 }
                 // Otherwise, create a default server for http.
                 None => loop {
-                    let client = Arc::clone(&client);
-                    let permit = match max_conns.clone().try_acquire_owned() {
-                        Ok(p) => p,
-                        Err(_) => {
-                            tracing::error!("Too many TLS connection. Connection closed.");
-                            continue;
-                        }
-                    };
-
-                    let server_params = Arc::clone(&server_params);
-
                     let res = listener.accept().await;
                     let (stream, address) = match res {
                         Ok(res) => res,
@@ -222,9 +211,11 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     };
 
+                    let server_params = Arc::clone(&server_params);
                     let client_ip = format_ip(address.ip());
-
-                    let max_req = max_req.clone();
+                    let max_req = Arc::clone(&max_req);
+                    let max_conns = Arc::clone(&max_conns);
+                    let client = Arc::clone(&client);
 
                     // This service will handle the connection.
                     let service = service_fn(move |req| {
@@ -239,12 +230,17 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     });
                     let http = http.clone();
                     tokio::task::spawn(async move {
-                        let permit = permit;
+                        let _permit = match max_conns.clone().try_acquire_owned() {
+                            Ok(p) => p,
+                            Err(_) => {
+                                tracing::error!("Too many TLS connection. Connection closed.");
+                                return;
+                            }
+                        };
                         if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await
                         {
                             tracing::error!("failed to serve connection: {err:#}");
                         }
-                        drop(permit);
                     });
                 },
             }
