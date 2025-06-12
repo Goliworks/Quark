@@ -91,7 +91,8 @@ impl ServiceConfig {
         let config = get_toml_config(path);
 
         let mut servers: HashMap<u16, Server> = HashMap::new();
-        for (_, service) in &config.services {
+        let services = config.services.unwrap_or(HashMap::new());
+        for (_, service) in &services {
             let port = service.port.unwrap_or(DEFAULT_PORT);
 
             // if service has TLS configuration, create a server for https.

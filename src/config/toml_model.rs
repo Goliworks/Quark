@@ -4,7 +4,10 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigToml {
-    pub services: HashMap<String, Service>,
+    // services is optionnal because a config file can be empty
+    // when the server is installed for the first time. But this
+    // field is still required for a fully functional server.
+    pub services: Option<HashMap<String, Service>>,
     pub global: Option<Global>,
 }
 

@@ -22,7 +22,7 @@ use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConf
 use crate::config::{Options, ServiceConfig};
 use crate::ipc::{self, IpcMessage};
 use crate::logs;
-use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
+use crate::utils::{drop_privileges, format_ip, welcome_server, QUARK_USER_AND_GROUP};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
@@ -74,6 +74,16 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
     let default_backlog = service_config.global.backlog;
+
+    // If no servers are defined, start a welcome server.
+    // This usually happens when the config file is empty, especially right
+    // after the server is installed for the first time.
+    if service_config.servers.is_empty() {
+        tracing::warn!("No services defined in the config file. Starting a welcome server.");
+        tracing::warn!("Don't keep this server running in production without configuration!");
+        welcome_server(http.clone()).await;
+        return Ok(());
+    }
 
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
