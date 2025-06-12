@@ -8,33 +8,6 @@ PACKAGE_SUFFIX="x86_64-linux"
 RELEASE_PATH="target/$TARGET/release"
 BIN_NAME="quark"
 
-if [ "$TARGET_PARAM" == "arm64" ]; then
-  TARGET="aarch64-unknown-linux-gnu"
-  PACKAGE_SUFFIX="arm64-linux"
-fi
-
-echo "Building Quark"
-echo "Target: $TARGET"
-cargo build --release --target "$TARGET"
-
-if [ $? -eq 0 ]; then
-  echo "Quark built successfully"
-else
-  echo "Quark build failed"
-  exit 1
-fi
-
-RELEASE_PATH="target/$TARGET/release"
-if [ -f "$RELEASE_PATH/quark" ]; then
-  mkdir -p "$TMP_PACKAGE_DIR"
-  cp "$RELEASE_PATH/$BIN_NAME" "$TMP_PACKAGE_DIR/$BIN_NAME"
-else
-  echo "Quark binary not found in $PWD/$RELEASE_PATH"
-  exit 1
-fi
-
-echo "Packaging Quark"
-
 # Get version from Cargo.toml
 VERSION=$(awk '
   /^\[package\]/ { in_package = 1; next }
@@ -46,15 +19,53 @@ VERSION=$(awk '
   }
 ' Cargo.toml)
 
+# Set the target system from the parameter.
+if [ "$TARGET_PARAM" == "arm64" ]; then
+  TARGET="aarch64-unknown-linux-gnu"
+  PACKAGE_SUFFIX="arm64-linux"
+fi
+
+# Build Quark with cargo.
+echo "Building Quark"
+echo "Target: $TARGET"
+cargo build --release --target "$TARGET"
+
+if [ $? -eq 0 ]; then
+  echo "Quark built successfully"
+else
+  echo "Quark build failed"
+  exit 1
+fi
+
+PACKAGE_NAME="$BIN_NAME-$VERSION-$PACKAGE_SUFFIX"
+TMP_PACKAGE_PATH="$TMP_PACKAGE_DIR/$PACKAGE_NAME"
+
+# Create a temporary directory for the package.
+RELEASE_PATH="target/$TARGET/release"
+if [ -f "$RELEASE_PATH/quark" ]; then
+  echo "Creating temporary directory $TMP_PACKAGE_DIR"
+  mkdir -p "$TMP_PACKAGE_DIR/$PACKAGE_NAME"
+  cp "$RELEASE_PATH/$BIN_NAME" "$TMP_PACKAGE_PATH/$BIN_NAME"
+else
+  echo "Quark binary not found in $PWD/$RELEASE_PATH"
+  exit 1
+fi
+
 # Create package
-cp -r package/* "$TMP_PACKAGE_DIR/"
+echo "Packaging Quark"
+
+cp -r package/* "$TMP_PACKAGE_PATH/"
 
 mkdir -p dist
 
-PACKAGE_PATH="dist/$BIN_NAME-$VERSION-$PACKAGE_SUFFIX.tar.gz"
+PACKAGE_PATH="dist/$PACKAGE_NAME.tar.gz"
 
-tar -czvf "$PACKAGE_PATH" -C "$TMP_PACKAGE_DIR" .
+cd "$TMP_PACKAGE_DIR"
+tar -czvf "../$PACKAGE_PATH" "$PACKAGE_NAME"
+cd ..
 rm -rf "$TMP_PACKAGE_DIR"
+
+echo "Delete temporary directory $TMP_PACKAGE_DIR"
 
 echo "Quark packaged successfully"
 echo "Package path: $PACKAGE_PATH"
