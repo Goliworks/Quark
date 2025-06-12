@@ -3,6 +3,8 @@ set -e
 
 QUARK_USER="quark"
 QUARK_BIN="quark"
+QUARK_DEFAULT_UID=635
+MAX_UID=999
 QUARK_BIN_DESTINATION="/usr/sbin"
 SOCKET_PATH="/run/quark"
 CONFIG_PATH="/etc/quark"
@@ -15,9 +17,39 @@ UPDATING=false
 
 echo "Installing Quark"
 
+# Get free UID (default is 245 for quark user).
+quark_uid=$QUARK_DEFAULT_UID
+while [ $quark_uid -le $MAX_UID ]; do
+  if getent passwd $quark_uid >/dev/null; then
+    quark_uid=$((quark_uid + 1))
+  else
+    echo "Using quark UID : $quark_uid"
+    break
+  fi
+done
+
+if [ $quark_uid -gt $MAX_UID ]; then
+  echo "No free UID available between $QUARK_DEFAULT_UID and $MAX_UID"
+  exit 1
+fi
+
+# Get nologin shell for system user.
+for shell in /usr/sbin/nologin /sbin/nologin /bin/false; do
+  if [ -x "$shell" ]; then
+    NOLOGIN_SHELL="$shell"
+    echo "Using nologin shell : $NOLOGIN_SHELL"
+    break
+  fi
+done
+
+[ -n "$NOLOGIN_SHELL" ] || {
+  echo "Unable to find nologin shell" >&2
+  exit 1
+}
+
 # Create user.
 if ! id "$QUARK_USER" >/dev/null 2>&1; then
-  useradd -r -s /usr/sbin/nologin "$QUARK_USER"
+  useradd -r -s "$NOLOGIN_SHELL" -u "$quark_uid" "$QUARK_USER"
   echo "User $QUARK_USER created"
 fi
 
