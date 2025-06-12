@@ -10,6 +10,7 @@ CONFIG_FILE="config.toml"
 CONFIG_FILE_EXAMPLE="config.example.toml"
 SERVICE_FILE="quark.service"
 SERVICE_DESTINATION="/etc/systemd/system"
+NOSTART_PARAM="$1" #no-start or nothing;
 UPDATING=false
 
 echo "Installing Quark"
@@ -76,7 +77,9 @@ chown root:root "$SERVICE_DESTINATION/$SERVICE_FILE"
 chmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable quark
-systemctl restart quark
+if [ "$NOSTART_PARAM" != "no-start" ]; then
+  systemctl restart quark
+fi
 
 # Finish
 if $UPDATING; then
