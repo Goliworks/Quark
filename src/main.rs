@@ -92,6 +92,18 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
             for cert in tls_certs {
                 // Add the certificates path to the list of paths to watch.
                 let path = Path::new(&cert.cert);
+                // Check if the file is a symlink.
+                if path.is_symlink() {
+                    // If it is, add the target of the symlink to the list of paths to watch.
+                    let target = std::fs::read_link(path).unwrap();
+                    let directory = target.parent().unwrap();
+                    let pathbuf = directory.to_path_buf();
+                    let paths_to_watch = paths_to_watch_list.entry(*port).or_default();
+                    if !paths_to_watch.contains(&pathbuf) {
+                        paths_to_watch.push(pathbuf);
+                    }
+                }
+                // Add the directory of the file to the list of paths to watch.
                 let directory = path.parent().unwrap();
                 let pathbuf = directory.to_path_buf();
                 let paths_to_watch = paths_to_watch_list.entry(*port).or_default();

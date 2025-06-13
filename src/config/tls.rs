@@ -7,7 +7,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use bincode::{Decode, Encode};
 use futures::{SinkExt, StreamExt};
-use notify::event::{AccessKind, AccessMode};
+use notify::event::{AccessKind, AccessMode, ModifyKind, RenameMode};
 use notify::{EventKind, RecommendedWatcher, Watcher};
 use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::{ClientHello, ResolvesServerCert};
@@ -220,7 +220,9 @@ pub async fn watch_certs(
         while let Some(res) = rx.next().await {
             match res {
                 Ok(event) => {
-                    if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write)) {
+                    if event.kind == EventKind::Access(AccessKind::Close(AccessMode::Write))
+                        || event.kind == EventKind::Modify(ModifyKind::Name(RenameMode::Both))
+                    {
                         println!("[Main Process] File changed: {}", event.paths[0].display());
                         if !debouncing.load(Ordering::Relaxed) {
                             // Launch debouncing to avoid to send the files multiple times

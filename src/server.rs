@@ -137,7 +137,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     tokio::spawn(async move {
                         while let Ok(msg) = rx.recv().await {
                             if msg.key.as_ref().unwrap() == &port_string {
-                                println!("[TLS] New certificate for port {}", port);
+                                info!("New certificates for port {}", port);
                                 msg.payload.iter().for_each(|cert| {
                                     reload_certificates(cert, ck_list_clone.clone());
                                 })
