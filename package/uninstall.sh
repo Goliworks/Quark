@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 YN_ERROR_MSG="Please answer yes(y) or no(n)."

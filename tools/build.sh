@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 TMP_PACKAGE_DIR="tmp_package"
@@ -55,6 +55,7 @@ fi
 echo "Packaging Quark"
 
 cp -r package/* "$TMP_PACKAGE_PATH/"
+cp LICENSE "$TMP_PACKAGE_PATH/"
 
 mkdir -p dist
 

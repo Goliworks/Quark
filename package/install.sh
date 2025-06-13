@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -e
 
 QUARK_USER="quark"
@@ -23,7 +23,6 @@ while [ $quark_uid -le $MAX_UID ]; do
   if getent passwd $quark_uid >/dev/null; then
     quark_uid=$((quark_uid + 1))
   else
-    echo "Using quark UID : $quark_uid"
     break
   fi
 done
@@ -37,7 +36,6 @@ fi
 for shell in /usr/sbin/nologin /sbin/nologin /bin/false; do
   if [ -x "$shell" ]; then
     NOLOGIN_SHELL="$shell"
-    echo "Using nologin shell : $NOLOGIN_SHELL"
     break
   fi
 done
@@ -50,7 +48,8 @@ done
 # Create user.
 if ! id "$QUARK_USER" >/dev/null 2>&1; then
   useradd -r -s "$NOLOGIN_SHELL" -u "$quark_uid" "$QUARK_USER"
-  echo "User $QUARK_USER created"
+  echo "User $QUARK_USER created with UID $quark_uid"
+  echo "Using nologin shell : $NOLOGIN_SHELL"
 fi
 
 # Create socket directory.
