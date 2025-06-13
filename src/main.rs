@@ -95,7 +95,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                 // Check if the file is a symlink.
                 if path.is_symlink() {
                     // If it is, add the target of the symlink to the list of paths to watch.
-                    let target = std::fs::read_link(path).unwrap();
+                    let target = std::fs::canonicalize(path).unwrap();
                     let directory = target.parent().unwrap();
                     let pathbuf = directory.to_path_buf();
                     let paths_to_watch = paths_to_watch_list.entry(*port).or_default();
