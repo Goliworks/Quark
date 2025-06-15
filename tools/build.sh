@@ -7,6 +7,10 @@ TARGET="x86_64-unknown-linux-gnu"
 PACKAGE_SUFFIX="x86_64-linux"
 RELEASE_PATH="target/$TARGET/release"
 BIN_NAME="quark"
+CURRENT_DIR=$(pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+cd "$SCRIPT_DIR/.." || exit 1
 
 # Get version from Cargo.toml
 VERSION=$(awk '
@@ -70,3 +74,5 @@ echo "Delete temporary directory $TMP_PACKAGE_DIR"
 
 printf "\e[32mQuark packaged successfully\e[0m\n"
 echo "Package path: $PACKAGE_PATH"
+
+cd "$CURRENT_DIR"

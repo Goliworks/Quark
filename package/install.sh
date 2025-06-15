@@ -15,6 +15,10 @@ SERVICE_DESTINATION="/etc/systemd/system"
 NOSTART_PARAM="$1" #no-start or nothing;
 YN_ERROR_MSG="\e[33mPlease answer yes(y) or no(n).\e[0m"
 UPDATING=false
+CURRENT_DIR=$(pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+cd "$SCRIPT_DIR" || exit 1
 
 printf "\e[33mInstalling Quark\e[0m\n"
 
@@ -149,3 +153,5 @@ if $UPDATING; then
 else
   printf "\e[32mQuark has been installed.\e[0m\n"
 fi
+
+cd "$CURRENT_DIR"

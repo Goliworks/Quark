@@ -6,6 +6,10 @@ SERVICE_NAME='quark'
 BINARY_PATH="/usr/sbin/$SERVICE_NAME"
 CONFIG_PATH="/etc/$SERVICE_NAME"
 LOG_PATH="/var/log/$SERVICE_NAME"
+CURRENT_DIR=$(pwd)
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+cd "$SCRIPT_DIR" || exit 1
 
 printf "\e[33mUninstalling Quark\e[0m\n"
 
@@ -78,3 +82,5 @@ while true; do
 done
 
 printf "\e[32mQuark has been uninstalled\e[0m\n"
+
+cd "$CURRENT_DIR"
