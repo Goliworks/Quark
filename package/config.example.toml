@@ -1,5 +1,9 @@
+# Example configuration file for the Quark server.
+# Quark is currently in an early stage of development.
+# Configuration parameters and behavior may change in future releases.
+
 [global] # Optional: Global configuration for the server.
-backlog = 1024 # Optional: Maximum number of pending connections the server can queue (default: 1024).
+backlog = 4096 # Optional: Maximum number of pending connections the server can queue (default: 4096).
 max_connection = 1024 # Optional: Maximum number of simultaneous client connections allowed (default: 1024).
 max_request = 100 # Optional: Maximum number of simultaneous HTTP requests allowed (default: 100).
 

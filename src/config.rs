@@ -17,7 +17,7 @@ const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
 const DEFAULT_SERVE_FILES: bool = false;
-const DEFAULT_BACKLOG: i32 = 1024;
+const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
 
