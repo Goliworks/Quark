@@ -14,24 +14,24 @@ proxy_timeout = 60 # Optional: Timeout in seconds for forwarding requests to the
 
 # Route all incoming traffic to a backend server.
 # At least one location or redirection must be defined for each service.
-[services.your_service_name.locations]
+[[services.your_service_name.locations]]
 source = "/*" # Match all incoming requests under the root path.
 target = "http://127.0.0.1:8080" # Forward matched requests to this backend server.
 
 # Serve static files for a specific route.
-[services.your_service_name.locations]
+[[services.your_service_name.locations]]
 source = "/static/*" # Match all requests starting with /static/.
 target = "/path/to/your/files" # Serve files from this local directory.
 serve_files = true # Optional: Enable file serving for this route (default: false).
 
 # Example of a wildcard redirection that preserves the path suffix.
-[services.your_service_name.redirections]
+[[services.your_service_name.redirections]]
 source = "/redirect/*" # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
 target = "http://127.0.0.1:8081/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
 temporary = true # Optional: Use a temporary (302) redirect. (default: false) 
 
 # Example of an exact path redirection.
-[services.your_service_name.redirections]
+[[services.your_service_name.redirections]]
 source = "/static-path/" # Match only the exact path /static-path/. Does not match /static-path/anything.
 target = "http://127.0.0.1:8082/static/" # The path is replaced exactly with this URL, without appending any suffix.
 temporary = false # Optional: Use a permanent (301) redirect. (default: false)

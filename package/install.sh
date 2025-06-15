@@ -13,6 +13,7 @@ CONFIG_FILE_EXAMPLE="config.example.toml"
 SERVICE_FILE="quark.service"
 SERVICE_DESTINATION="/etc/systemd/system"
 NOSTART_PARAM="$1" #no-start or nothing;
+YN_ERROR_MSG="Please answer yes(y) or no(n)."
 UPDATING=false
 
 echo "Installing Quark"
@@ -57,6 +58,34 @@ if [ ! -d "$SOCKET_PATH" ]; then
   mkdir -p "$SOCKET_PATH"
   chown "$QUARK_USER":"$QUARK_USER" "$SOCKET_PATH"
   echo "Directory $SOCKET_PATH created"
+fi
+
+# Check a quark service is already active.
+if systemctl is-active --quiet quark; then
+  while true; do
+    echo "The Quark service is already running"
+    echo "To proceed with the installation, this script will temporarily stop the service."
+    echo "Once the setup is complete, the service will be restarted automatically."
+    echo "Please note: your server will only be unavailable for a few seconds."
+    read -p "Do you agree to continue with this process? (y/n)" yn
+    case $yn in
+    [Yy]*)
+      echo "Stopping the Quark service"
+      systemctl stop quark
+      # check if the service is stopped
+      while systemctl is-active --quiet quark; do
+        sleep 1
+      done
+      echo "The Quark service has been stopped"
+      break
+      ;;
+    [Nn]*)
+      echo "Quark installation aborted"
+      exit 1
+      ;;
+    *) echo "$YN_ERROR_MSG" ;;
+    esac
+  done
 fi
 
 # Copy the binary to the destination
@@ -109,7 +138,9 @@ chmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
 systemctl daemon-reload
 systemctl enable quark
 if [ "$NOSTART_PARAM" != "no-start" ]; then
+  echo "Starting the Quark service"
   systemctl restart quark
+  echo "The Quark service has been started"
 fi
 
 # Finish
