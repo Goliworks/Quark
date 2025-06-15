@@ -1,13 +1,13 @@
 #!/bin/sh
 set -e
 
-YN_ERROR_MSG="Please answer yes(y) or no(n)."
+YN_ERROR_MSG="\e[33mPlease answer yes(y) or no(n).\e[0m"
 SERVICE_NAME='quark'
 BINARY_PATH="/usr/sbin/$SERVICE_NAME"
 CONFIG_PATH="/etc/$SERVICE_NAME"
 LOG_PATH="/var/log/$SERVICE_NAME"
 
-echo "Uninstalling Quark"
+printf "\e[33mUninstalling Quark\e[0m\n"
 
 # Remove systemd service
 if systemctl status "$SERVICE_NAME.service" >/dev/null 2>&1; then
@@ -25,7 +25,7 @@ fi
 
 # Remove configufation
 while true; do
-  read -p "Do you want to remove the configuration directory? (y/n)" yn
+  read -p "Do you want to remove the configuration directory? (y/n) : " yn
   case $yn in
   [Yy]*)
     if [ -d "$CONFIG_PATH" ]; then
@@ -37,13 +37,13 @@ while true; do
     break
     ;;
   [Nn]*) break ;;
-  *) echo "$YN_ERROR_MSG" ;;
+  *) printf "$YN_ERROR_MSG\n" ;;
   esac
 done
 
 # Remove logs directory
 while true; do
-  read -p "Do you want to remove the log directory? (y/n)" yn
+  read -p "Do you want to remove the log directory? (y/n) : " yn
   case $yn in
   [Yy]*)
     if [ -d "$LOG_PATH" ]; then
@@ -55,13 +55,13 @@ while true; do
     break
     ;;
   [Nn]*) break ;;
-  *) echo "$YN_ERROR_MSG" ;;
+  *) printf "$YN_ERROR_MSG\n" ;;
   esac
 done
 
 # Remove quark user
 while true; do
-  read -p "Do you want to delete the user 'quark'? (y/n)" yn
+  read -p "Do you want to delete the user 'quark'? (y/n) : " yn
   case $yn in
   [Yy]*)
     if grep -q "^$SERVICE_NAME:" /etc/passwd; then
@@ -73,8 +73,8 @@ while true; do
     break
     ;;
   [Nn]*) break ;;
-  *) echo "$YN_ERROR_MSG" ;;
+  *) printf "$YN_ERROR_MSG\n" ;;
   esac
 done
 
-echo "Quark has been uninstalled"
+printf "\e[32mQuark has been uninstalled\e[0m\n"

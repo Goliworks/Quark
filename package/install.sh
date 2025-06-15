@@ -13,10 +13,10 @@ CONFIG_FILE_EXAMPLE="config.example.toml"
 SERVICE_FILE="quark.service"
 SERVICE_DESTINATION="/etc/systemd/system"
 NOSTART_PARAM="$1" #no-start or nothing;
-YN_ERROR_MSG="Please answer yes(y) or no(n)."
+YN_ERROR_MSG="\e[33mPlease answer yes(y) or no(n).\e[0m"
 UPDATING=false
 
-echo "Installing Quark"
+printf "\e[33mInstalling Quark\e[0m\n"
 
 # Get free UID (default is 245 for quark user).
 quark_uid=$QUARK_DEFAULT_UID
@@ -29,7 +29,7 @@ while [ $quark_uid -le $MAX_UID ]; do
 done
 
 if [ $quark_uid -gt $MAX_UID ]; then
-  echo "No free UID available between $QUARK_DEFAULT_UID and $MAX_UID"
+  printf "\e[31mNo free UID available between $QUARK_DEFAULT_UID and $MAX_UID\e[0m\n"
   exit 1
 fi
 
@@ -42,7 +42,7 @@ for shell in /usr/sbin/nologin /sbin/nologin /bin/false; do
 done
 
 [ -n "$NOLOGIN_SHELL" ] || {
-  echo "Unable to find nologin shell" >&2
+  printf "\e[31mUnable to find nologin shell\e[0m\n" >&2
   exit 1
 }
 
@@ -62,17 +62,17 @@ fi
 
 # Check a quark service is already active.
 if systemctl is-active --quiet quark; then
+  echo "\e[33mThe Quark service is already running.\e[0m"
+  echo "To proceed with the installation, this script will temporarily stop the service."
+  echo "Once the setup is complete, the service will be restarted automatically."
+  echo "Please note: your server will only be unavailable for a few seconds."
   while true; do
-    echo "The Quark service is already running"
-    echo "To proceed with the installation, this script will temporarily stop the service."
-    echo "Once the setup is complete, the service will be restarted automatically."
-    echo "Please note: your server will only be unavailable for a few seconds."
-    read -p "Do you agree to continue with this process? (y/n)" yn
+    read -p "Do you agree to continue with this process? (y/n) : " yn
     case $yn in
     [Yy]*)
       echo "Stopping the Quark service"
       systemctl stop quark
-      # check if the service is stopped
+      # check if the service is stopped before continuing
       while systemctl is-active --quiet quark; do
         sleep 1
       done
@@ -80,10 +80,10 @@ if systemctl is-active --quiet quark; then
       break
       ;;
     [Nn]*)
-      echo "Quark installation aborted"
+      printf "\e[31mQuark installation aborted\n"
       exit 1
       ;;
-    *) echo "$YN_ERROR_MSG" ;;
+    *) printf "$YN_ERROR_MSG\n" ;;
     esac
   done
 fi
@@ -98,13 +98,13 @@ if [ -f "$QUARK_BIN" ]; then
   chown root:root "$QUARK_BIN_DESTINATION/$QUARK_BIN"
 
   if $UPDATING; then
-    echo "'$QUARK_BIN' bin has replaced the previous one in $QUARK_BIN_DESTINATION"
+    printf "\e[33m'$QUARK_BIN' bin has replaced the previous one in $QUARK_BIN_DESTINATION.\e[0m\n"
   else
     echo "File $QUARK_BIN copied"
   fi
   chmod 755 "$QUARK_BIN_DESTINATION/$QUARK_BIN"
 else
-  echo "Error : $QUARK_BIN binary not found in $PWD"
+  printf "\e[31mError : $QUARK_BIN binary not found in $PWD\e[0m\n"
   exit 1
 fi
 
@@ -145,7 +145,7 @@ fi
 
 # Finish
 if $UPDATING; then
-  echo "Quark has been updated"
+  printf "\e[32mQuark has been updated.\e[0m\n"
 else
-  echo "Quark has been installed"
+  printf "\e[32mQuark has been installed.\e[0m\n"
 fi
