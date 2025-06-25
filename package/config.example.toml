@@ -31,11 +31,11 @@ serve_files = true # Optional: Enable file serving for this route (default: fals
 # Example of a wildcard redirection that preserves the path suffix.
 [[services.your_service_name.redirections]]
 source = "/redirect/*" # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
-target = "http://127.0.0.1:8081/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
+target = "https://yourwebsite.com/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
 temporary = true # Optional: Use a temporary (302) redirect. (default: false) 
 
 # Example of an exact path redirection.
 [[services.your_service_name.redirections]]
 source = "/static-path/" # Match only the exact path /static-path/. Does not match /static-path/anything.
-target = "http://127.0.0.1:8082/static/" # The path is replaced exactly with this URL, without appending any suffix.
+target = "https://yourwebsite.com/static/" # The path is replaced exactly with this URL, without appending any suffix.
 temporary = false # Optional: Use a permanent (301) redirect. (default: false)

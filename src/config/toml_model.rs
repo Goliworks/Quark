@@ -7,8 +7,9 @@ pub struct ConfigToml {
     // services is optionnal because a config file can be empty
     // when the server is installed for the first time. But this
     // field is still required for a fully functional server.
-    pub services: Option<HashMap<String, Service>>,
     pub global: Option<Global>,
+    pub services: Option<HashMap<String, Service>>,
+    pub loadbalancer: Option<HashMap<String, Loadbalancer>>,
 }
 
 // Global config.
@@ -49,4 +50,10 @@ pub struct Redirections {
     pub source: String,
     pub target: String,
     pub temporary: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Loadbalancer {
+    pub algo: String,
+    pub servers: Vec<String>,
 }

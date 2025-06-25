@@ -119,7 +119,7 @@ pub async fn handler(
 
     let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
-        Some(target) => Ok((target.location.clone(), target.serve_files)),
+        Some(target) => Ok((target.locations.get(0).unwrap().clone(), target.serve_files)),
         // If no strict match, check for a match with the path.
         None => {
             let mut uri_path: Option<String> = None;
@@ -129,7 +129,7 @@ pub async fn handler(
                     let new_path = match_url.strip_prefix(url);
                     uri_path = Some(format!(
                         "{}{}",
-                        utils::remove_last_slash(&target.location),
+                        utils::remove_last_slash(&target.locations.get(0).unwrap()),
                         new_path.unwrap()
                     ));
                     serve_files = Some(target.serve_files);

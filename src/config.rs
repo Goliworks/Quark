@@ -9,7 +9,7 @@ use std::{
 };
 use toml_model::ConfigToml;
 
-use crate::utils;
+use crate::utils::{self, extract_vars_from_string};
 
 const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
@@ -59,7 +59,7 @@ pub struct TlsCertificate {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Target {
-    pub location: String,
+    pub locations: Vec<String>,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub serve_files: bool,
 }
@@ -112,7 +112,7 @@ impl ServiceConfig {
                         tls: Some(Vec::new()),
                     });
 
-                    manage_locations_and_redirections(server_tls, service);
+                    manage_locations_and_redirections(server_tls, service, &config.loadbalancer);
                     www_auto_redirection(server_tls, service, port_tls, true);
                     // Create a struct with the found certificates.
                     let tls_cert = TlsCertificate {
@@ -143,7 +143,7 @@ impl ServiceConfig {
                 tls: None,
             });
 
-            manage_locations_and_redirections(server, service);
+            manage_locations_and_redirections(server, service, &config.loadbalancer);
             www_auto_redirection(
                 server,
                 service,
@@ -210,7 +210,11 @@ fn get_toml_config(path: String) -> ConfigToml {
     config
 }
 
-fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::Service) {
+fn manage_locations_and_redirections(
+    server: &mut Server,
+    service: &toml_model::Service,
+    loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
+) {
     // Other locations
     if let Some(locations) = &service.locations {
         for location in locations {
@@ -219,7 +223,7 @@ fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 Target {
-                    location: location.target.clone(),
+                    locations: get_backends(&location.target, loadbalancers),
                     strict_uri: strict_mode,
                     serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
                 },
@@ -245,6 +249,39 @@ fn manage_locations_and_redirections(server: &mut Server, service: &toml_model::
             );
         }
     }
+}
+
+fn get_backends(
+    target: &str,
+    loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
+) -> Vec<String> {
+    let keys = extract_vars_from_string(target);
+    let mut server_list: Vec<String> = Vec::new();
+
+    // Only get the first key since you can only have one loadbalancer list.
+    if let Some(key) = keys.get(0) {
+        if let Some(loadbalancer) = loadbalancers.as_ref().unwrap().get(key) {
+            let mut i = 0;
+            for lb_server in &loadbalancer.servers {
+                let server = if let Some(server) = server_list.get(i) {
+                    server
+                } else {
+                    target
+                };
+
+                let server_url = server.to_string();
+                let var = format!("${{{}}}", key);
+                let server = server_url.replace(&var, &lb_server);
+
+                server_list.push(server.to_string());
+                i += 1;
+            }
+        }
+    } else {
+        server_list.push(target.to_string());
+    }
+
+    server_list
 }
 
 fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {

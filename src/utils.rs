@@ -102,6 +102,23 @@ pub fn drop_privileges(name: &str) -> Result<&'static str, Box<dyn std::error::E
     Ok("Privileges dropped")
 }
 
+pub fn extract_vars_from_string(text: &str) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    let mut pos = 0;
+    while let Some(start) = text[pos..].find("${") {
+        let start = pos + start;
+        if let Some(end) = text[start..].find("}") {
+            let end = start + end;
+            let key = &text[start + 2..end];
+            keys.push(key.to_string());
+            pos = end + 1;
+        } else {
+            break;
+        }
+    }
+    keys
+}
+
 pub async fn welcome_server(http: Arc<Builder<TokioExecutor>>) {
     let port: u16 = if getuid().is_root() { 80 } else { 8080 };
     let socket_addr: SocketAddr = ([0, 0, 0, 0], port).into();
