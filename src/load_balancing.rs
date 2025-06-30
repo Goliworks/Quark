@@ -3,6 +3,8 @@ use std::{
     sync::{atomic::AtomicUsize, Arc},
 };
 
+use twox_hash::XxHash3_64;
+
 use crate::config::Target;
 
 const ALGO_ROUND_ROBIN: &str = "round_robin";
@@ -34,6 +36,7 @@ impl LoadBalancerConfig {
         id: &u32,
         servers: &Vec<String>,
         algo: &Option<String>,
+        ip: &str,
     ) -> String {
         let srv_nbr = servers.len();
         if srv_nbr == 1 {
@@ -50,7 +53,9 @@ impl LoadBalancerConfig {
                     return servers.get(index % srv_nbr).unwrap().to_string();
                 }
                 ALGO_IP_HASH => {
-                    // To do : ip hash.
+                    let hash = XxHash3_64::oneshot(ip.as_bytes());
+                    let index = hash % srv_nbr as u64;
+                    return servers.get(index as usize).unwrap().to_string();
                 }
                 _ => {}
             }

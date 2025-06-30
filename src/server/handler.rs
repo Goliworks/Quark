@@ -121,7 +121,8 @@ pub async fn handler(
     let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
         Some(target) => {
-            let location = loadbalancer.balance(&target.id, &target.locations, &target.algo);
+            let location =
+                loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
             Ok((location, target.serve_files))
         }
         // If no strict match, check for a match with the path.
@@ -131,8 +132,12 @@ pub async fn handler(
             for (url, target) in params.targets.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                     let new_path = match_url.strip_prefix(url);
-                    let location =
-                        loadbalancer.balance(&target.id, &target.locations, &target.algo);
+                    let location = loadbalancer.balance(
+                        &target.id,
+                        &target.locations,
+                        &target.algo,
+                        &client_ip,
+                    );
                     uri_path = Some(format!(
                         "{}{}",
                         utils::remove_last_slash(&location),
