@@ -1,6 +1,7 @@
 mod config;
 mod http_response;
 mod ipc;
+mod load_balancing;
 mod logs;
 mod server;
 mod utils;

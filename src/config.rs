@@ -9,7 +9,7 @@ use std::{
 };
 use toml_model::ConfigToml;
 
-use crate::utils::{self, extract_vars_from_string};
+use crate::utils::{self, extract_vars_from_string, generate_u32_id};
 
 const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_TLS: u16 = 443;
@@ -59,9 +59,11 @@ pub struct TlsCertificate {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Target {
+    pub id: u32,
     pub locations: Vec<String>,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub serve_files: bool,
+    pub algo: Option<String>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -220,12 +222,15 @@ fn manage_locations_and_redirections(
         for location in locations {
             // Remove last /
             let (source, strict_mode) = source_and_strict_mode(&location.source);
+            let (backends, algo) = get_backends_and_algo(&location.target, loadbalancers);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 Target {
-                    locations: get_backends(&location.target, loadbalancers),
+                    id: generate_u32_id(),
+                    locations: backends,
                     strict_uri: strict_mode,
                     serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
+                    algo,
                 },
             );
         }
@@ -251,12 +256,13 @@ fn manage_locations_and_redirections(
     }
 }
 
-fn get_backends(
+fn get_backends_and_algo(
     target: &str,
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
-) -> Vec<String> {
+) -> (Vec<String>, Option<String>) {
     let keys = extract_vars_from_string(target);
     let mut server_list: Vec<String> = Vec::new();
+    let mut algo: Option<String> = None;
 
     // Only get the first key since you can only have one loadbalancer list.
     if let Some(key) = keys.get(0) {
@@ -274,6 +280,7 @@ fn get_backends(
                 let server = server_url.replace(&var, &lb_server);
 
                 server_list.push(server.to_string());
+                algo = Some(loadbalancer.algo.clone());
                 i += 1;
             }
         }
@@ -281,7 +288,7 @@ fn get_backends(
         server_list.push(target.to_string());
     }
 
-    server_list
+    (server_list, algo)
 }
 
 fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {

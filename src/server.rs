@@ -19,10 +19,10 @@ use tokio_rustls::TlsAcceptor;
 use tracing::info;
 
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
-use crate::config::{Options, ServiceConfig};
+use crate::config::{Options, ServiceConfig, Target};
 use crate::ipc::{self, IpcMessage};
-use crate::logs;
 use crate::utils::{drop_privileges, format_ip, welcome_server, QUARK_USER_AND_GROUP};
+use crate::{load_balancing, logs};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Wait for parent init.
@@ -85,6 +85,18 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // generate loadbalancing configuration.
+    let mut targets: Vec<&Target> = Vec::new();
+    for (_, server) in service_config.servers.iter() {
+        for (_, target) in server.params.targets.iter() {
+            if target.algo.is_some() {
+                targets.push(target);
+            }
+        }
+    }
+
+    let lb_config = Arc::new(load_balancing::LoadBalancerConfig::new(targets));
+
     // Build a server for each port defined in the config file.
     for (port, server) in service_config.servers {
         // Build TCP Socket and Socket Address.
@@ -103,6 +115,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         socket.listen(default_backlog).unwrap();
 
         let server_params = Arc::new(server.params);
+        let lb_config = Arc::clone(&lb_config);
 
         let http = Arc::clone(&http);
         let client = Arc::clone(&client);
@@ -170,6 +183,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         let acceptor = tls_acceptor.clone();
                         let client = Arc::clone(&client);
                         let server_params = Arc::clone(&server_params);
+                        let lb_config = Arc::clone(&lb_config);
                         let max_req = Arc::clone(&max_req);
                         let max_conns = Arc::clone(&max_conns);
 
@@ -178,6 +192,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                             handler::handler(
                                 req,
                                 server_params.clone(),
+                                lb_config.clone(),
                                 max_req.clone(),
                                 client.clone(),
                                 client_ip.clone(),
@@ -222,6 +237,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                     let server_params = Arc::clone(&server_params);
+                    let lb_config = Arc::clone(&lb_config);
                     let client_ip = format_ip(address.ip());
                     let max_req = Arc::clone(&max_req);
                     let max_conns = Arc::clone(&max_conns);
@@ -232,6 +248,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         handler::handler(
                             req,
                             server_params.clone(),
+                            lb_config.clone(),
                             max_req.clone(),
                             client.clone(),
                             client_ip.clone(),

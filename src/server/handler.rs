@@ -10,7 +10,7 @@ use tokio::time::timeout;
 
 use crate::{
     config::ServerParams,
-    http_response,
+    http_response, load_balancing,
     server::serve_file,
     utils::{self, ProxyHandlerBody},
 };
@@ -23,6 +23,7 @@ use crate::{
 pub async fn handler(
     req: Request<Incoming>,
     params: Arc<ServerParams>,
+    loadbalancer: Arc<load_balancing::LoadBalancerConfig>,
     max_req: Arc<tokio::sync::Semaphore>,
     client: Arc<Client<HttpConnector, Incoming>>,
     client_ip: String,
@@ -119,7 +120,10 @@ pub async fn handler(
 
     let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
-        Some(target) => Ok((target.locations.get(0).unwrap().clone(), target.serve_files)),
+        Some(target) => {
+            let location = loadbalancer.balance(&target.id, &target.locations, &target.algo);
+            Ok((location, target.serve_files))
+        }
         // If no strict match, check for a match with the path.
         None => {
             let mut uri_path: Option<String> = None;
@@ -127,9 +131,11 @@ pub async fn handler(
             for (url, target) in params.targets.iter().rev() {
                 if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                     let new_path = match_url.strip_prefix(url);
+                    let location =
+                        loadbalancer.balance(&target.id, &target.locations, &target.algo);
                     uri_path = Some(format!(
                         "{}{}",
-                        utils::remove_last_slash(&target.locations.get(0).unwrap()),
+                        utils::remove_last_slash(&location),
                         new_path.unwrap()
                     ));
                     serve_files = Some(target.serve_files);

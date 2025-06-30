@@ -2,8 +2,12 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU32, AtomicU8, Ordering},
+        Arc,
+    },
     task::{Context, Poll},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use http_body_util::{Full, StreamBody};
@@ -117,6 +121,13 @@ pub fn extract_vars_from_string(text: &str) -> Vec<String> {
         }
     }
     keys
+}
+
+static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+pub fn generate_u32_id() -> u32 {
+    let counter = COUNTER.fetch_add(1, Ordering::Relaxed) as u32;
+    counter
 }
 
 pub async fn welcome_server(http: Arc<Builder<TokioExecutor>>) {
