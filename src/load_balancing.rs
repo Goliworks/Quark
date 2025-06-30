@@ -26,7 +26,6 @@ impl LoadBalancerConfig {
                 }
             }
         }
-
         LoadBalancerConfig { round_robin }
     }
 
@@ -43,7 +42,12 @@ impl LoadBalancerConfig {
         if let Some(algo) = algo {
             match algo.as_str() {
                 ALGO_ROUND_ROBIN => {
-                    // To do : round robin.
+                    let index = self
+                        .round_robin
+                        .get(id)
+                        .unwrap()
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return servers.get(index % srv_nbr).unwrap().to_string();
                 }
                 ALGO_IP_HASH => {
                     // To do : ip hash.
@@ -51,6 +55,7 @@ impl LoadBalancerConfig {
                 _ => {}
             }
         }
+        // Default.
         servers.get(0).unwrap().to_string()
     }
 }

@@ -3,11 +3,10 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::{
-        atomic::{AtomicU32, AtomicU8, Ordering},
+        atomic::{AtomicU32, Ordering},
         Arc,
     },
     task::{Context, Poll},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use http_body_util::{Full, StreamBody};
