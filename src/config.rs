@@ -64,6 +64,7 @@ pub struct Target {
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub serve_files: bool,
     pub algo: Option<String>,
+    pub weights: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -220,9 +221,10 @@ fn manage_locations_and_redirections(
     // Other locations
     if let Some(locations) = &service.locations {
         for location in locations {
-            // Remove last /
+            // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&location.source);
-            let (backends, algo) = get_backends_and_algo(&location.target, loadbalancers);
+            // Get all backends info required for load balancing.
+            let (backends, algo, weight) = get_backends_config(&location.target, loadbalancers);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 Target {
@@ -231,6 +233,7 @@ fn manage_locations_and_redirections(
                     strict_uri: strict_mode,
                     serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
                     algo,
+                    weights: weight,
                 },
             );
         }
@@ -238,7 +241,7 @@ fn manage_locations_and_redirections(
     // Redirections.
     if let Some(redirections) = &service.redirections {
         for red in redirections {
-            // Remove last /
+            // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&red.source);
             server.params.redirections.insert(
                 format!("{}{}", service.domain.clone(), source),
@@ -256,18 +259,20 @@ fn manage_locations_and_redirections(
     }
 }
 
-fn get_backends_and_algo(
+fn get_backends_config(
     target: &str,
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
-) -> (Vec<String>, Option<String>) {
+) -> (Vec<String>, Option<String>, Option<Vec<u32>>) {
     let keys = extract_vars_from_string(target);
     let mut server_list: Vec<String> = Vec::new();
     let mut algo: Option<String> = None;
+    let mut weight: Option<Vec<u32>> = None;
 
     // Only get the first key since you can only have one loadbalancer list.
     if let Some(key) = keys.get(0) {
         if let Some(loadbalancer) = loadbalancers.as_ref().unwrap().get(key) {
             let mut i = 0;
+            let srv_nbr = loadbalancer.servers.len();
             for lb_server in &loadbalancer.servers {
                 let server = if let Some(server) = server_list.get(i) {
                     server
@@ -281,6 +286,7 @@ fn get_backends_and_algo(
 
                 server_list.push(server.to_string());
                 algo = Some(loadbalancer.algo.clone());
+                weight = manage_weights(srv_nbr, &loadbalancer.weights);
                 i += 1;
             }
         }
@@ -288,7 +294,21 @@ fn get_backends_and_algo(
         server_list.push(target.to_string());
     }
 
-    (server_list, algo)
+    (server_list, algo, weight)
+}
+
+// Add or remmove weights if necessary.
+fn manage_weights(srv_nbr: usize, weights: &Option<Vec<u32>>) -> Option<Vec<u32>> {
+    match weights {
+        Some(weights) => {
+            let mut new_weights: Vec<u32> = Vec::with_capacity(srv_nbr);
+            for i in 0..srv_nbr {
+                new_weights.push(*weights.get(i).unwrap_or(&1));
+            }
+            Some(new_weights)
+        }
+        None => None,
+    }
 }
 
 fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {

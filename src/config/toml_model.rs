@@ -56,4 +56,5 @@ pub struct Redirections {
 pub struct Loadbalancer {
     pub algo: String,
     pub servers: Vec<String>,
+    pub weights: Option<Vec<u32>>,
 }
