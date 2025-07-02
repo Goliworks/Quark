@@ -2,7 +2,7 @@
 use http_body_util::Full;
 use hyper::{Response, StatusCode};
 
-use crate::utils::ProxyHandlerBody;
+use crate::server::server_utils::ProxyHandlerBody;
 
 pub fn not_found() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::NOT_FOUND)

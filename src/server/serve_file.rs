@@ -5,10 +5,9 @@ use http_body_util::StreamBody;
 use hyper::{body::Frame, Response};
 use tokio_util::io::ReaderStream;
 
-use crate::{
-    http_response,
-    utils::{BoxedFrameStream, ProxyHandlerBody},
-};
+use crate::http_response;
+
+use super::server_utils::{BoxedFrameStream, ProxyHandlerBody};
 
 // Simple file server.
 pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {

@@ -12,8 +12,10 @@ use crate::{
     config::ServerParams,
     http_response, load_balancing,
     server::serve_file,
-    utils::{self, ProxyHandlerBody},
+    utils::{self},
 };
+
+use super::server_utils::ProxyHandlerBody;
 
 #[tracing::instrument(
     name = "Handler",

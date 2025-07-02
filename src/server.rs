@@ -1,5 +1,6 @@
 mod handler;
 mod serve_file;
+pub mod server_utils;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv6Addr};
@@ -12,6 +13,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
+use server_utils::welcome_server;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
@@ -21,7 +23,7 @@ use tracing::info;
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
 use crate::config::{Options, ServiceConfig, Target};
 use crate::ipc::{self, IpcMessage};
-use crate::utils::{drop_privileges, format_ip, welcome_server, QUARK_USER_AND_GROUP};
+use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
 use crate::{load_balancing, logs};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
