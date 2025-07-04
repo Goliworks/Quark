@@ -11,8 +11,9 @@ use toml_model::ConfigToml;
 
 use crate::utils::{self, extract_vars_from_string, generate_u32_id};
 
+const MAIN_SERVER_NAME: &str = "main";
 const DEFAULT_PORT: u16 = 80;
-const DEFAULT_PORT_TLS: u16 = 443;
+const DEFAULT_PORT_HTTPS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_TEMPORARY_REDIRECT: bool = false;
@@ -26,7 +27,7 @@ const DEFAULT_LOG_PATH: &str = "/var/log/quark";
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ServiceConfig {
-    pub servers: HashMap<u16, Server>, // Port -> Server
+    pub servers: HashMap<String, Server>, // name -> Server
     pub global: Global,
 }
 
@@ -40,6 +41,8 @@ pub struct Global {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Server {
     pub params: ServerParams,
+    pub port: u16,
+    pub https_port: u16,
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
@@ -93,70 +96,79 @@ impl ServiceConfig {
     pub fn build_from(path: String) -> ServiceConfig {
         let config = get_toml_config(path);
 
-        let mut servers: HashMap<u16, Server> = HashMap::new();
-        let services = config.services.unwrap_or(HashMap::new());
-        for (_, service) in &services {
-            let port = service.port.unwrap_or(DEFAULT_PORT);
+        let mut servers: HashMap<String, Server> = HashMap::new();
 
-            // if service has TLS configuration, create a server for https.
-
-            let mut tls_redirection = false;
-
-            match &service.tls {
-                Some(tls) => {
-                    let port_tls = tls.port.unwrap_or(DEFAULT_PORT_TLS);
-                    let server_tls = servers.entry(port_tls).or_insert(Server {
-                        params: ServerParams {
-                            targets: BTreeMap::new(),
-                            redirections: BTreeMap::new(),
-                            auto_tls: None,
-                            proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
-                        },
-                        tls: Some(Vec::new()),
-                    });
-
-                    manage_locations_and_redirections(server_tls, service, &config.loadbalancer);
-                    www_auto_redirection(server_tls, service, port_tls, true);
-                    // Create a struct with the found certificates.
-                    let tls_cert = TlsCertificate {
-                        cert: tls.certificate.clone(),
-                        key: tls.key.clone(),
-                    };
-
-                    // Check if the certificate is already in the list.
-                    if let Some(tls) = &mut server_tls.tls {
-                        if !tls.contains(&tls_cert) {
-                            // Add the certificate to the list.
-                            tls.push(tls_cert);
-                        }
-                    }
-                    tls_redirection = tls.redirection.unwrap_or(DEFAULT_TLS_REDIRECTION);
-                }
-                None => {}
-            }
-
-            // Create a default server for http.
-            let server = servers.entry(port).or_insert(Server {
+        // Declare all servers defined in the config.
+        for (name, server) in &config.server.unwrap_or(HashMap::new()) {
+            let port = server.port.unwrap_or(DEFAULT_PORT);
+            let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
+            let server = Server {
                 params: ServerParams {
                     targets: BTreeMap::new(),
                     redirections: BTreeMap::new(),
-                    auto_tls: Some(Vec::new()),
-                    proxy_timeout: service.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
+                    auto_tls: None,
+                    proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                 },
+                port,
+                https_port,
                 tls: None,
-            });
+            };
+            servers.insert(name.clone(), server);
+        }
+
+        // Declare the main server if not declared.
+        if !servers.contains_key(MAIN_SERVER_NAME) {
+            let server = Server {
+                params: ServerParams {
+                    targets: BTreeMap::new(),
+                    redirections: BTreeMap::new(),
+                    auto_tls: None,
+                    proxy_timeout: DEFAULT_PROXY_TIMEOUT,
+                },
+                port: DEFAULT_PORT,
+                https_port: DEFAULT_PORT_HTTPS,
+                tls: None,
+            };
+            servers.insert(MAIN_SERVER_NAME.to_string(), server);
+        }
+
+        let services = config.service.unwrap_or(HashMap::new());
+        for (_, service) in &services {
+            // if service has TLS configuration, create a server for https.
+
+            let mut tls_redirection = false;
+            let server_name = service
+                .server
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or(MAIN_SERVER_NAME);
+
+            let server = servers.get_mut(server_name).unwrap();
+
+            let port = server.port;
+            let https_port = server.https_port;
+
+            if let Some(tls) = &service.tls {
+                let tls_cert = TlsCertificate {
+                    cert: tls.certificate.clone(),
+                    key: tls.key.clone(),
+                };
+                server.tls = Some(Vec::new());
+                if let Some(tls) = &mut server.tls {
+                    if !tls.contains(&tls_cert) {
+                        // Add the certificate to the list.
+                        tls.push(tls_cert);
+                    }
+                }
+                tls_redirection = tls.redirection.unwrap_or(DEFAULT_TLS_REDIRECTION);
+            }
 
             manage_locations_and_redirections(server, service, &config.loadbalancer);
             www_auto_redirection(
                 server,
                 service,
                 if service.tls.is_some() {
-                    service
-                        .tls
-                        .as_ref()
-                        .unwrap()
-                        .port
-                        .unwrap_or(DEFAULT_PORT_TLS)
+                    https_port.clone()
                 } else {
                     port
                 },
@@ -166,20 +178,18 @@ impl ServiceConfig {
             // Define if a tls redirection should be done.
             if tls_redirection {
                 let domain = service.domain.clone();
-                let tls_port = service
-                    .tls
-                    .as_ref()
-                    .unwrap()
-                    .port
-                    .unwrap_or(DEFAULT_PORT_TLS);
-
-                let tls_domain = if tls_port != DEFAULT_PORT_TLS {
+                let tls_port = https_port.clone();
+                let tls_domain = if tls_port != DEFAULT_PORT_HTTPS {
                     format!("{}:{}", domain, tls_port)
                 } else {
                     domain
                 };
 
-                server.params.auto_tls.as_mut().unwrap().push(tls_domain);
+                server
+                    .params
+                    .auto_tls
+                    .get_or_insert_with(Vec::new)
+                    .push(tls_domain);
             }
         }
 
@@ -314,7 +324,11 @@ fn manage_weights(srv_nbr: usize, weights: &Option<Vec<u32>>) -> Option<Vec<u32>
 fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {
     let domain: String;
     let target_domain: String;
-    let default_port = if tls { DEFAULT_PORT_TLS } else { DEFAULT_PORT };
+    let default_port = if tls {
+        DEFAULT_PORT_HTTPS
+    } else {
+        DEFAULT_PORT
+    };
     // If the configured domain doesn't start with www, redirect every request
     // that starts with www to the configured domain.
     if !service.domain.starts_with("www") {

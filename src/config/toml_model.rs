@@ -4,11 +4,12 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct ConfigToml {
-    // services is optionnal because a config file can be empty
+    // All fields are optional because a config file can be empty
     // when the server is installed for the first time. But this
     // field is still required for a fully functional server.
     pub global: Option<Global>,
-    pub services: Option<HashMap<String, Service>>,
+    pub server: Option<HashMap<String, Server>>,
+    pub service: Option<HashMap<String, Service>>,
     pub loadbalancer: Option<HashMap<String, Loadbalancer>>,
 }
 
@@ -21,20 +22,25 @@ pub struct Global {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct Server {
+    pub port: Option<u16>,
+    pub https_port: Option<u16>,
+    pub proxy_timeout: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Service {
     pub domain: String,
+    pub server: Option<String>,
     pub locations: Option<Vec<Locations>>,
     pub redirections: Option<Vec<Redirections>>,
-    pub port: Option<u16>,
     pub tls: Option<Tls>,
-    pub proxy_timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Tls {
     pub certificate: String,
     pub key: String,
-    pub port: Option<u16>,
     pub redirection: Option<bool>,
 }
 

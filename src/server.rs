@@ -3,7 +3,9 @@ mod serve_file;
 pub mod server_utils;
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr};
+use std::pin::Pin;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
@@ -69,7 +71,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting server");
 
     // List of servers to start.
-    let mut servers = Vec::new();
+    let mut servers: Vec<Pin<Box<dyn Future<Output = ()> + Send>>> = Vec::new();
 
     let http = Arc::new(Builder::new(TokioExecutor::new()));
     let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
@@ -100,21 +102,8 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let lb_config = Arc::new(load_balancing::LoadBalancerConfig::new(targets));
 
     // Build a server for each port defined in the config file.
-    for (port, server) in service_config.servers {
+    for (_, server) in service_config.servers {
         // Build TCP Socket and Socket Address.
-        let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
-        let socket_addr: SocketAddr =
-            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port).into();
-        // Allow IPv4 connections.
-        socket.set_only_v6(false).unwrap();
-        // Allow reuse of the address.
-        socket.set_reuse_address(true).unwrap();
-        // Define that the socket is non-blocking. Otherwise tokio can't accept it.
-        socket.set_nonblocking(true).unwrap();
-        // Bind the socket to the address.
-        socket.bind(&socket_addr.into()).unwrap();
-        // Define the backlog.
-        socket.listen(default_backlog).unwrap();
 
         let server_params = Arc::new(server.params);
         let lb_config = Arc::clone(&lb_config);
@@ -127,108 +116,55 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
         let tls_certs = Arc::clone(&tls_certs).clone();
 
-        let listener = TcpListener::from_std(socket.into()).unwrap();
-        info!("Server listening on port {}", port);
+        if let Some(_tls) = &server.tls {
+            // Clone arcs for the next asynvc task.
+            let server_params = Arc::clone(&server_params);
+            let lb_config = Arc::clone(&lb_config);
 
-        let service = async move {
-            match server.tls {
-                // If server has TLS configuration, create a server for https.
-                Some(_tls) => {
-                    // Start the tls config.
+            let http = Arc::clone(&http);
+            let client = Arc::clone(&client);
+            let max_conns = Arc::clone(&max_conns);
+            let max_req = Arc::clone(&max_req);
 
-                    let mut rx = tx.subscribe();
+            let service = async move {
+                let port = server.https_port;
+                let listener = create_listener(port, default_backlog);
+                let mut rx = tx.subscribe();
 
-                    let tls_certs = tls_certs.get(&port).unwrap();
+                let tls_certs = tls_certs.get(&port).unwrap();
 
-                    let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
-                    let ck_list = {
-                        let mut guard = tls_config.lock().await;
-                        Arc::new(guard.get_certified_key_list())
-                    };
+                let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
+                let ck_list = {
+                    let mut guard = tls_config.lock().await;
+                    Arc::new(guard.get_certified_key_list())
+                };
 
-                    // Spawn a task to watch for certificates changes.
-                    let port_string = port.to_string();
-                    let ck_list_clone = ck_list.clone();
-                    tokio::spawn(async move {
-                        while let Ok(msg) = rx.recv().await {
-                            if msg.key.as_ref().unwrap() == &port_string {
-                                info!("New certificates for port {}", port);
-                                msg.payload.iter().for_each(|cert| {
-                                    reload_certificates(cert, ck_list_clone.clone());
-                                })
-                            }
+                // Spawn a task to watch for certificates changes.
+                let port_string = port.to_string();
+                let ck_list_clone = ck_list.clone();
+                tokio::spawn(async move {
+                    while let Ok(msg) = rx.recv().await {
+                        if msg.key.as_ref().unwrap() == &port_string {
+                            info!("New certificates for port {}", port);
+                            msg.payload.iter().for_each(|cert| {
+                                reload_certificates(cert, ck_list_clone.clone());
+                            })
                         }
-                    });
-
-                    // Generate the sni resolver pass it to the tls_config
-                    // to get the rustls server config.
-                    let resolver = SniCertResolver::new(ck_list);
-                    let server_config = {
-                        let guard = tls_config.lock().await;
-                        guard.get_tls_config(resolver)
-                    };
-
-                    // Create the tls acceptor with the rustls server config.
-                    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
-
-                    loop {
-                        let res = listener.accept().await;
-                        let (stream, address) = match res {
-                            Ok(res) => res,
-                            Err(err) => {
-                                tracing::error!("failed to accept connection: {err:#}");
-                                continue;
-                            }
-                        };
-
-                        let client_ip = format_ip(address.ip());
-                        let acceptor = tls_acceptor.clone();
-                        let client = Arc::clone(&client);
-                        let server_params = Arc::clone(&server_params);
-                        let lb_config = Arc::clone(&lb_config);
-                        let max_req = Arc::clone(&max_req);
-                        let max_conns = Arc::clone(&max_conns);
-
-                        // This service will handle the connection.
-                        let service = service_fn(move |req| {
-                            handler::handler(
-                                req,
-                                server_params.clone(),
-                                lb_config.clone(),
-                                max_req.clone(),
-                                client.clone(),
-                                client_ip.clone(),
-                                "https",
-                            )
-                        });
-
-                        let http = http.clone();
-                        tokio::task::spawn(async move {
-                            let _permit = match max_conns.clone().try_acquire_owned() {
-                                Ok(p) => p,
-                                Err(_) => {
-                                    tracing::error!("Too many TLS connection. Connection closed.");
-                                    return;
-                                }
-                            };
-
-                            let stream = match acceptor.accept(stream).await {
-                                Ok(stream) => stream,
-                                Err(err) => {
-                                    tracing::error!("failed to perform tls handshake: {err:#}");
-                                    return;
-                                }
-                            };
-                            if let Err(err) =
-                                http.serve_connection(TokioIo::new(stream), service).await
-                            {
-                                tracing::error!("failed to serve connection: {err:#}");
-                            }
-                        });
                     }
-                }
-                // Otherwise, create a default server for http.
-                None => loop {
+                });
+
+                // Generate the sni resolver pass it to the tls_config
+                // to get the rustls server config.
+                let resolver = SniCertResolver::new(ck_list);
+                let server_config = {
+                    let guard = tls_config.lock().await;
+                    guard.get_tls_config(resolver)
+                };
+
+                // Create the tls acceptor with the rustls server config.
+                let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
+
+                loop {
                     let res = listener.accept().await;
                     let (stream, address) = match res {
                         Ok(res) => res,
@@ -238,12 +174,13 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     };
 
+                    let client_ip = format_ip(address.ip());
+                    let acceptor = tls_acceptor.clone();
+                    let client = Arc::clone(&client);
                     let server_params = Arc::clone(&server_params);
                     let lb_config = Arc::clone(&lb_config);
-                    let client_ip = format_ip(address.ip());
                     let max_req = Arc::clone(&max_req);
                     let max_conns = Arc::clone(&max_conns);
-                    let client = Arc::clone(&client);
 
                     // This service will handle the connection.
                     let service = service_fn(move |req| {
@@ -254,9 +191,10 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                             max_req.clone(),
                             client.clone(),
                             client_ip.clone(),
-                            "http",
+                            "https",
                         )
                     });
+
                     let http = http.clone();
                     tokio::task::spawn(async move {
                         let _permit = match max_conns.clone().try_acquire_owned() {
@@ -266,17 +204,75 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                                 return;
                             }
                         };
+
+                        let stream = match acceptor.accept(stream).await {
+                            Ok(stream) => stream,
+                            Err(err) => {
+                                tracing::error!("failed to perform tls handshake: {err:#}");
+                                return;
+                            }
+                        };
                         if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await
                         {
                             tracing::error!("failed to serve connection: {err:#}");
                         }
                     });
-                },
+                }
+            };
+            servers.push(Box::pin(service));
+        }
+
+        let service2 = async move {
+            let port = server.port;
+            let listener = create_listener(port, default_backlog);
+
+            loop {
+                let res = listener.accept().await;
+                let (stream, address) = match res {
+                    Ok(res) => res,
+                    Err(err) => {
+                        tracing::error!("failed to accept connection: {err:#}");
+                        continue;
+                    }
+                };
+
+                let server_params = Arc::clone(&server_params);
+                let lb_config = Arc::clone(&lb_config);
+                let client_ip = format_ip(address.ip());
+                let max_req = Arc::clone(&max_req);
+                let max_conns = Arc::clone(&max_conns);
+                let client = Arc::clone(&client);
+
+                // This service will handle the connection.
+                let service = service_fn(move |req| {
+                    handler::handler(
+                        req,
+                        server_params.clone(),
+                        lb_config.clone(),
+                        max_req.clone(),
+                        client.clone(),
+                        client_ip.clone(),
+                        "http",
+                    )
+                });
+                let http = http.clone();
+                tokio::task::spawn(async move {
+                    let _permit = match max_conns.clone().try_acquire_owned() {
+                        Ok(p) => p,
+                        Err(_) => {
+                            tracing::error!("Too many TLS connection. Connection closed.");
+                            return;
+                        }
+                    };
+                    if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await {
+                        tracing::error!("failed to serve connection: {err:#}");
+                    }
+                });
             }
         };
 
         // Add the server to the list.
-        servers.push(service);
+        servers.push(Box::pin(service2));
     }
 
     // Drop privileges from root to www-data.
@@ -290,4 +286,23 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     join_all(servers).await;
 
     Ok(())
+}
+
+fn create_listener(port: u16, backlog: i32) -> TcpListener {
+    // Build TCP Socket and Socket Address.
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let socket_addr: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port).into();
+    // Allow IPv4 connections.
+    socket.set_only_v6(false).unwrap();
+    // Allow reuse of the address.
+    socket.set_reuse_address(true).unwrap();
+    // Define that the socket is non-blocking. Otherwise tokio can't accept it.
+    socket.set_nonblocking(true).unwrap();
+    // Bind the socket to the address.
+    socket.bind(&socket_addr.into()).unwrap();
+    // Define the backlog.
+    socket.listen(backlog).unwrap();
+    // Create and return the listener.
+    info!("Server listening on port {}", port);
+    TcpListener::from_std(socket.into()).unwrap()
 }

@@ -20,7 +20,7 @@ use super::server_utils::ProxyHandlerBody;
 #[tracing::instrument(
     name = "Handler",
     fields(ip = %client_ip),
-    skip(req, params, max_req, client, client_ip, scheme)
+    skip(req, params, loadbalancer, max_req, client, client_ip, scheme)
 )]
 pub async fn handler(
     req: Request<Incoming>,
@@ -66,18 +66,20 @@ pub async fn handler(
     tracing::info!("Navigate to {}", &source_url);
 
     // Redirect to HTTPS if the server has TLS configuration.
-    if let Some(dom) = params
-        .auto_tls
-        .as_ref()
-        .unwrap_or(&Vec::new())
-        .iter()
-        .find(|x| x.starts_with(&domain.to_string()))
-    {
-        return Ok(Response::builder()
-            .status(StatusCode::PERMANENT_REDIRECT)
-            .header("Location", format!("https://{}{}", dom, path))
-            .body(ProxyHandlerBody::Empty)
-            .unwrap());
+    if scheme == "http" {
+        if let Some(dom) = params
+            .auto_tls
+            .as_ref()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .find(|x| x.starts_with(&domain.to_string()))
+        {
+            return Ok(Response::builder()
+                .status(StatusCode::PERMANENT_REDIRECT)
+                .header("Location", format!("https://{}{}", dom, path))
+                .body(ProxyHandlerBody::Empty)
+                .unwrap());
+        }
     }
 
     // Check for redirections.

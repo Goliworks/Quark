@@ -85,9 +85,10 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
     let mut tls_servers: HashMap<u16, Vec<config::TlsCertificate>> = HashMap::new();
 
-    for (port, server) in &service_config.servers {
+    for (_, server) in &service_config.servers {
         if let Some(tls_certs) = &server.tls {
-            tls_servers.insert(*port, tls_certs.clone());
+            let port = server.https_port;
+            tls_servers.insert(port, tls_certs.clone());
             println!("[Main Process] Server {} is configured with TLS", port);
             println!("[Main Process] tls {:#?}", tls_certs);
             for cert in tls_certs {
@@ -99,7 +100,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                     let target = std::fs::canonicalize(path).unwrap();
                     let directory = target.parent().unwrap();
                     let pathbuf = directory.to_path_buf();
-                    let paths_to_watch = paths_to_watch_list.entry(*port).or_default();
+                    let paths_to_watch = paths_to_watch_list.entry(port).or_default();
                     if !paths_to_watch.contains(&pathbuf) {
                         paths_to_watch.push(pathbuf);
                     }
@@ -107,14 +108,14 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                 // Add the directory of the file to the list of paths to watch.
                 let directory = path.parent().unwrap();
                 let pathbuf = directory.to_path_buf();
-                let paths_to_watch = paths_to_watch_list.entry(*port).or_default();
+                let paths_to_watch = paths_to_watch_list.entry(port).or_default();
                 if !paths_to_watch.contains(&pathbuf) {
                     paths_to_watch.push(pathbuf);
                 }
                 // Read the certificate and the key.
                 match IpcCerts::build(&cert.cert, &cert.key).await {
                     Ok(certs) => {
-                        cert_list.entry(*port).or_default().push(certs);
+                        cert_list.entry(port).or_default().push(certs);
                     }
                     Err(e) => panic!("Error. {}", e),
                 }
