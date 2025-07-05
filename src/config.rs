@@ -2,12 +2,13 @@ pub mod tls;
 mod toml_model;
 use argh::FromArgs;
 use bincode::{Decode, Encode};
-use hyper::StatusCode;
+use hyper::{service, StatusCode};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
+    path::{Path, PathBuf},
 };
-use toml_model::ConfigToml;
+use toml_model::{ConfigToml, SubConfigToml};
 
 use crate::utils::{self, extract_vars_from_string, generate_u32_id};
 
@@ -216,8 +217,45 @@ impl ServiceConfig {
 }
 
 fn get_toml_config(path: String) -> ConfigToml {
-    let toml_str = fs::read_to_string(path).unwrap();
-    let config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
+    println!("Loading config from {}", path);
+    let toml_str = fs::read_to_string(&path).unwrap();
+    let mut config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
+        panic!("Failed to parse toml file.\nInvalid configuration file.");
+    });
+    // import subconfiguration.
+    if let Some(subconf) = &config.global.as_ref().and_then(|g| g.import.as_ref()) {
+        let mut conf_path = PathBuf::from(path);
+        conf_path.pop();
+        for file in subconf.iter() {
+            let sub_config = import_sub_toml_config(file, conf_path.to_str().unwrap());
+            // insert the subconfig into the main config.
+            if let Some(services) = sub_config.service {
+                config
+                    .service
+                    .get_or_insert_with(HashMap::new)
+                    .extend(services);
+            }
+            if let Some(loadbalancers) = sub_config.loadbalancer {
+                config
+                    .loadbalancer
+                    .get_or_insert_with(HashMap::new)
+                    .extend(loadbalancers);
+            }
+        }
+    }
+    config
+}
+
+fn import_sub_toml_config(path: &str, dir: &str) -> SubConfigToml {
+    let file_path = Path::new(path);
+    let real_path = if file_path.is_relative() {
+        Path::new(dir).join(file_path)
+    } else {
+        PathBuf::from(path)
+    };
+    let real_path = real_path.to_str().unwrap();
+    let toml_str = fs::read_to_string(&real_path).unwrap();
+    let config: SubConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
     });
     config
