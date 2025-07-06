@@ -62,7 +62,7 @@ pub struct Locations {
 pub struct Redirections {
     pub source: String,
     pub target: String,
-    pub temporary: Option<bool>,
+    pub code: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]

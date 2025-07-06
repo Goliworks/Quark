@@ -2,7 +2,7 @@ pub mod tls;
 mod toml_model;
 use argh::FromArgs;
 use bincode::{Decode, Encode};
-use hyper::{service, StatusCode};
+use hyper::StatusCode;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
@@ -17,7 +17,7 @@ const DEFAULT_PORT: u16 = 80;
 const DEFAULT_PORT_HTTPS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
-const DEFAULT_TEMPORARY_REDIRECT: bool = false;
+const DEFAULT_REDIRECTION_CODE: u16 = 301; // Permanent.
 const DEFAULT_SERVE_FILES: bool = false;
 const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
@@ -296,10 +296,10 @@ fn manage_locations_and_redirections(
                 Redirection {
                     location: red.target.clone(),
                     strict_uri: strict_mode,
-                    code: if red.temporary.unwrap_or(DEFAULT_TEMPORARY_REDIRECT) {
-                        StatusCode::TEMPORARY_REDIRECT.as_u16()
-                    } else {
-                        StatusCode::PERMANENT_REDIRECT.as_u16()
+                    code: match red.code {
+                        // Available redirection codes.
+                        Some(code @ (301 | 302 | 307 | 308)) => code,
+                        _ => DEFAULT_REDIRECTION_CODE,
                     },
                 },
             );
