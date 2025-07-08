@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{borrow::Cow, str::FromStr, sync::Arc, time::Duration};
 
 use hyper::{
     body::Incoming,
@@ -41,21 +41,13 @@ pub async fn handler(
         }
     };
 
-    // Get the domain.
-    // Use authority for HTTP/2
-    let (authority, domain) = if req.uri().authority().is_some() {
-        let authority = req.uri().authority().unwrap().to_string();
-        let domain = req.uri().authority().unwrap().host();
-        (authority, domain)
-    } else {
-        let authority = req.headers()["host"].to_str().unwrap().to_string();
-        let domain = req.headers()["host"]
-            .to_str()
-            .unwrap()
-            .split(':')
-            .next()
-            .unwrap();
-        (authority, domain)
+    // Get the authority and domain from the request.
+    let (authority, domain) = match get_authority_and_domain(&req) {
+        Ok((authority, domain)) => (authority, domain),
+        Err(err) => {
+            tracing::error!("{}", err);
+            return Ok(http_response::bad_request());
+        }
     };
 
     // Get the path from the request.
@@ -239,4 +231,27 @@ pub async fn handler(
             return Ok(http_response::bad_gateway());
         }
     };
+}
+
+fn get_authority_and_domain(
+    req: &Request<Incoming>,
+) -> Result<(String, Cow<str>), Box<dyn std::error::Error>> {
+    // Use authority for HTTP/2
+    if let Some(authority) = req.uri().authority() {
+        let authority_str = authority.to_string();
+        let domain = authority.host();
+        return Ok((authority_str, Cow::Borrowed(domain)));
+    }
+
+    // Use host header.
+    let host_header = req.headers().get("host").ok_or("Missing Host header")?;
+    let host_str = host_header
+        .to_str()
+        .map_err(|_| "Invalid Host header encoding")?;
+    let domain = host_str
+        .split(':')
+        .next()
+        .ok_or("Invalid Host header format")?;
+
+    Ok((host_str.to_string(), Cow::Borrowed(domain)))
 }

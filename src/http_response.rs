@@ -28,6 +28,10 @@ pub fn gateway_timeout() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::GATEWAY_TIMEOUT)
 }
 
+pub fn bad_request() -> Response<ProxyHandlerBody> {
+    error_builder(StatusCode::BAD_REQUEST)
+}
+
 fn error_builder(status: StatusCode) -> Response<ProxyHandlerBody> {
     let version = format!("{} v.{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     let code = status.as_u16();
