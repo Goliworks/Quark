@@ -51,9 +51,9 @@ pub async fn handler(
     };
 
     // Get the path from the request.
-    let path = req.uri().path_and_query().unwrap().as_str();
+    let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
     // Used for logs.
-    let source_url = format!("{}://{}{}", scheme, &authority, &path);
+    let source_url = format!("{}://{}{}", scheme, &authority, path);
 
     tracing::info!("Navigate to {}", &source_url);
 
