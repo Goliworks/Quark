@@ -30,6 +30,7 @@ const DEFAULT_LOG_PATH: &str = "/var/log/quark";
 pub struct ServiceConfig {
     pub servers: HashMap<String, Server>, // name -> Server
     pub global: Global,
+    pub empty: bool,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -54,7 +55,6 @@ pub struct ServerParams {
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
-
 #[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct TlsCertificate {
     pub cert: String,
@@ -96,6 +96,11 @@ pub struct Options {
 impl ServiceConfig {
     pub fn build_from(path: String) -> ServiceConfig {
         let config = get_toml_config(path);
+
+        // Check if the toml config has services.
+        // If not, define the ServiceConfig as empty
+        // to serve the Welcome page.
+        let empty = config.services.is_none();
 
         let mut servers: HashMap<String, Server> = HashMap::new();
 
@@ -212,7 +217,11 @@ impl ServiceConfig {
                 .unwrap_or(DEFAULT_MAX_REQUESTS),
         };
 
-        ServiceConfig { servers, global }
+        ServiceConfig {
+            servers,
+            global,
+            empty,
+        }
     }
 }
 

@@ -82,7 +82,8 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // If no servers are defined, start a welcome server.
     // This usually happens when the config file is empty, especially right
     // after the server is installed for the first time.
-    if service_config.servers.is_empty() {
+    println!("Config: {:#?}", service_config.servers);
+    if service_config.empty {
         tracing::warn!("No services defined in the config file. Starting a welcome server.");
         tracing::warn!("Don't keep this server running in production without configuration!");
         welcome_server(http.clone()).await;
