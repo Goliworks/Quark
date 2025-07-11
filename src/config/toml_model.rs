@@ -8,9 +8,9 @@ pub struct ConfigToml {
     // when the server is installed for the first time. But this
     // field is still required for a fully functional server.
     pub global: Option<Global>,
-    pub server: Option<HashMap<String, Server>>,
-    pub service: Option<HashMap<String, Service>>,
-    pub loadbalancer: Option<HashMap<String, Loadbalancer>>,
+    pub servers: Option<HashMap<String, Server>>,
+    pub services: Option<HashMap<String, Service>>,
+    pub loadbalancers: Option<HashMap<String, Loadbalancer>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -11,12 +11,12 @@ import = ["/path/to/your/config.toml"] # (Optional) List of additional configura
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
-[server.main] # (Optional) Define a server.
+[servers.main] # (Optional) Define a server.
 port = 8080 # (Optional) Port used for HTTP connections. (default: 80)
 https_port = 8443 # (Optional) Port used for HTTPS connections. (default: 443)
 proxy_timeout = 60 # (Optional) Timeout in seconds for forwarding requests to the backend. (default: 60s)
 
-[service.your_service_name] # Define a new service to be handled by the server.
+[services.your_service_name] # Define a new service to be handled by the server.
 domain = "yourservice.com" # Public domain name for this service.
 server = "server_name" # (Optional) Name of the [server.<name>] section to associate with this service. (default: "main")
 tls.certificate = "/path/to/your/certificate.pem" # (Optional) Path to the TLS/SSL certificate file.
@@ -25,31 +25,31 @@ tls.redirection = true # (Optional) If true, automatically redirect HTTP request
 
 # Route all incoming traffic to a backend server.
 # At least one location or redirection must be defined for each service.
-[[service.your_service_name.locations]]
+[[services.your_service_name.locations]]
 source = "/*" # Match all incoming requests under the root path.
 target = "http://127.0.0.1:8888" # Forward matched requests to this backend server.
 
 # Serve static files for a specific route.
-[[service.your_service_name.locations]]
+[[services.your_service_name.locations]]
 source = "/static/*" # Match all requests starting with /static/.
 target = "/path/to/your/files" # Serve files from this local directory.
 serve_files = true # (Optional) Enable file serving for this route. (default: false)
 
 # Example of a wildcard redirection that preserves the path suffix.
-[[service.your_service_name.redirections]]
+[[services.your_service_name.redirections]]
 source = "/redirect/*" # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
 target = "https://yourwebsite.com/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
 code = 301 # (Optional) HTTP redirection. code (default: 301 for permanent, allowed: 301, 302, 307, 308)
 
 # Example of an exact path redirection.
-[[service.your_service_name.redirections]]
+[[services.your_service_name.redirections]]
 source = "/static-path/" # Match only the exact path /static-path/. Does not match /static-path/anything.
 target = "https://yourwebsite.com/static/" # The path is replaced exactly with this URL, without appending any suffix.
 code = 302 # (Optional) Use a temporary redirection code. (default: 301)
 
 # Example of load balancing.
 # Configure a load balancer for a service.
-[loadbalancer.my_backends] # Define a new load balancer.
+[loadbalancers.my_backends] # Define a new load balancer.
 algo = "round_robin" # (Optional) Load balancing algorithm. (default: "round_robin", allowed: "round_robin", "ip_hash")
 servers = [
   "12.0.0.10",
@@ -60,6 +60,6 @@ servers = [
 weights = [5, 3, 3, 1] # (Optional) Server weights for weighted round robin (must match server count).
 
 # Use the load balancer for a specific route.
-[[service.your_service_name.locations]]
+[[services.your_service_name.locations]]
 source = "/*" # Match all incoming requests under the root path.
 target = "http://${my_backends}:8888" # Forward matched requests to the load balancer backends.

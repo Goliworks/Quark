@@ -100,7 +100,7 @@ impl ServiceConfig {
         let mut servers: HashMap<String, Server> = HashMap::new();
 
         // Declare all servers defined in the config.
-        for (name, server) in &config.server.unwrap_or(HashMap::new()) {
+        for (name, server) in &config.servers.unwrap_or(HashMap::new()) {
             let port = server.port.unwrap_or(DEFAULT_PORT);
             let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
             let server = Server {
@@ -133,7 +133,7 @@ impl ServiceConfig {
             servers.insert(MAIN_SERVER_NAME.to_string(), server);
         }
 
-        let services = config.service.unwrap_or(HashMap::new());
+        let services = config.services.unwrap_or(HashMap::new());
         for (_, service) in &services {
             // if service has TLS configuration, create a server for https.
 
@@ -164,7 +164,7 @@ impl ServiceConfig {
                 tls_redirection = tls.redirection.unwrap_or(DEFAULT_TLS_REDIRECTION);
             }
 
-            manage_locations_and_redirections(server, service, &config.loadbalancer);
+            manage_locations_and_redirections(server, service, &config.loadbalancers);
             www_auto_redirection(
                 server,
                 service,
@@ -231,13 +231,13 @@ fn get_toml_config(path: String) -> ConfigToml {
             // insert the subconfig into the main config.
             if let Some(services) = sub_config.service {
                 config
-                    .service
+                    .services
                     .get_or_insert_with(HashMap::new)
                     .extend(services);
             }
             if let Some(loadbalancers) = sub_config.loadbalancer {
                 config
-                    .loadbalancer
+                    .loadbalancers
                     .get_or_insert_with(HashMap::new)
                     .extend(loadbalancers);
             }
