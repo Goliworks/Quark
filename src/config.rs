@@ -232,13 +232,13 @@ fn get_toml_config(path: String) -> ConfigToml {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
     });
     // import subconfiguration.
-    if let Some(subconf) = &config.global.as_ref().and_then(|g| g.import.as_ref()) {
+    if let Some(subconf) = &config.import {
         let mut conf_path = PathBuf::from(path);
         conf_path.pop();
         for file in subconf.iter() {
             let sub_config = import_sub_toml_config(file, conf_path.to_str().unwrap());
             // insert the subconfig into the main config.
-            if let Some(services) = sub_config.service {
+            if let Some(services) = sub_config.services {
                 config
                     .services
                     .get_or_insert_with(HashMap::new)
@@ -329,8 +329,8 @@ fn get_backends_config(
     if let Some(key) = keys.get(0) {
         if let Some(loadbalancer) = loadbalancers.as_ref().unwrap().get(key) {
             let mut i = 0;
-            let srv_nbr = loadbalancer.servers.len();
-            for lb_server in &loadbalancer.servers {
+            let srv_nbr = loadbalancer.backends.len();
+            for lb_server in &loadbalancer.backends {
                 let server = if let Some(server) = server_list.get(i) {
                     server
                 } else {

@@ -79,10 +79,12 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
     let default_backlog = service_config.global.backlog;
 
+    #[cfg(debug_assertions)]
+    println!("Config: {:#?}", service_config.servers);
+
     // If no servers are defined, start a welcome server.
     // This usually happens when the config file is empty, especially right
     // after the server is installed for the first time.
-    println!("Config: {:#?}", service_config.servers);
     if service_config.empty {
         tracing::warn!("No services defined in the config file. Starting a welcome server.");
         tracing::warn!("Don't keep this server running in production without configuration!");

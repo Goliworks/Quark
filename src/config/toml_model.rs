@@ -7,6 +7,7 @@ pub struct ConfigToml {
     // All fields are optional because a config file can be empty
     // when the server is installed for the first time. But this
     // field is still required for a fully functional server.
+    pub import: Option<Vec<String>>,
     pub global: Option<Global>,
     pub servers: Option<HashMap<String, Server>>,
     pub services: Option<HashMap<String, Service>>,
@@ -15,7 +16,7 @@ pub struct ConfigToml {
 
 #[derive(Debug, Deserialize)]
 pub struct SubConfigToml {
-    pub service: Option<HashMap<String, Service>>,
+    pub services: Option<HashMap<String, Service>>,
     pub loadbalancer: Option<HashMap<String, Loadbalancer>>,
 }
 
@@ -25,7 +26,6 @@ pub struct Global {
     pub backlog: Option<i32>,
     pub max_connections: Option<usize>,
     pub max_requests: Option<usize>,
-    pub import: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +68,6 @@ pub struct Redirections {
 #[derive(Debug, Deserialize)]
 pub struct Loadbalancer {
     pub algo: String,
-    pub servers: Vec<String>,
+    pub backends: Vec<String>,
     pub weights: Option<Vec<u32>>,
 }

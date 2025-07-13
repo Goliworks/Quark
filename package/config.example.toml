@@ -2,12 +2,13 @@
 # Quark is currently in an early stage of development.
 # Configuration parameters and behavior may change in future releases.
 
+import = ["/path/to/your/config.toml"] # (Optional) List of additional configuration files to import.
+# Note : Only services and load balancers can be configured in an external files.
+
 [global] # (Optional) Global configuration for the server.
 backlog = 4096 # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
 max_connection = 1024 # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
 max_request = 100 # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
-import = ["/path/to/your/config.toml"] # (Optional) List of additional configuration files to import.
-#Note : Only services and load balancers can be configured in an external files.
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
@@ -51,7 +52,7 @@ code = 302 # (Optional) Use a temporary redirection code. (default: 301)
 # Configure a load balancer for a service.
 [loadbalancers.my_backends] # Define a new load balancer.
 algo = "round_robin" # (Optional) Load balancing algorithm. (default: "round_robin", allowed: "round_robin", "ip_hash")
-servers = [
+backends = [
   "12.0.0.10",
   "12.0.0.20",
   "12.0.0.30",
