@@ -22,7 +22,7 @@ pub struct RoundRobinConfig {
 }
 
 impl LoadBalancerConfig {
-    pub fn new(targets: Vec<&Target>) -> Self {
+    pub fn new(targets: Vec<&Target>) -> Arc<Self> {
         let mut round_robin = HashMap::new();
         for target in targets {
             if let Some(algo) = &target.algo {
@@ -46,7 +46,7 @@ impl LoadBalancerConfig {
                 }
             }
         }
-        LoadBalancerConfig { round_robin }
+        Arc::new(LoadBalancerConfig { round_robin })
     }
 
     pub fn balance(

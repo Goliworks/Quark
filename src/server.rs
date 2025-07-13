@@ -102,7 +102,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let lb_config = Arc::new(load_balancing::LoadBalancerConfig::new(targets));
+    let lb_config = load_balancing::LoadBalancerConfig::new(targets);
 
     // Build a server for each port defined in the config file.
     for (_, server) in service_config.servers {
@@ -129,7 +129,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
             let max_conns = Arc::clone(&max_conns);
             let max_req = Arc::clone(&max_req);
 
-            let service = async move {
+            let https_service = async move {
                 let port = server.https_port;
                 let listener = create_listener(port, default_backlog);
                 let mut rx = tx.subscribe();
@@ -222,10 +222,10 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     });
                 }
             };
-            servers.push(Box::pin(service));
+            servers.push(Box::pin(https_service));
         }
 
-        let service2 = async move {
+        let http_service = async move {
             let port = server.port;
             let listener = create_listener(port, default_backlog);
 
@@ -275,7 +275,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // Add the server to the list.
-        servers.push(Box::pin(service2));
+        servers.push(Box::pin(http_service));
     }
 
     // Drop privileges from root to www-data.
