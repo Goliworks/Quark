@@ -119,6 +119,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
         let tls_certs = Arc::clone(&tls_certs).clone();
 
+        // Declare https server if tls is enabled in the server config.
         if let Some(_tls) = &server.tls {
             // Clone arcs for the next asynvc task.
             let server_params = Arc::clone(&server_params);
@@ -129,9 +130,10 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
             let max_conns = Arc::clone(&max_conns);
             let max_req = Arc::clone(&max_req);
 
+            let port = server.https_port;
+            let listener = create_listener(port, default_backlog);
+
             let https_service = async move {
-                let port = server.https_port;
-                let listener = create_listener(port, default_backlog);
                 let mut rx = tx.subscribe();
 
                 let tls_certs = tls_certs.get(&port).unwrap();
@@ -225,10 +227,10 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
             servers.push(Box::pin(https_service));
         }
 
+        // Declare http server.
+        let port = server.port;
+        let listener = create_listener(port, default_backlog);
         let http_service = async move {
-            let port = server.port;
-            let listener = create_listener(port, default_backlog);
-
             loop {
                 let res = listener.accept().await;
                 let (stream, address) = match res {
