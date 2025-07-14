@@ -10,10 +10,11 @@ A fast reverse proxy written in Rust.
 
 ## Features
 
-- Easy configuration in TOML file.
+- Easy configuration in TOML files.
 - Automatic HTTPS configuration simply by specifying certificates in the config file.
 - Native IPv6 support (alongside IPv4) thanks to dual-stack sockets.
 - HTTP/2 by default for HTTPS connections.
+- Load balancing with support for Round Robin, Weighted Round Robin, and IP Hash algorithms.
 - Simple capabilities for serving static files.
 
 ## Installation and configuration
@@ -22,7 +23,7 @@ Download the latest release or build it with `./tools/build.sh`, extract the arc
 The server will start immediately on port 80 after installation.
 Then, edit `/etc/quark/config.toml` and restart the server with `systemctl restart quark`.
 
-You can use `config.example.toml` as a template.
+You can use the `config.example.toml` file, located in the same directory, as a template.
 
 The server’s log files are stored in `/var/log/quark/`
 
@@ -35,6 +36,26 @@ Run the binary with the following command:
 `./quark --config /path/to/your/config_file.toml --logs /path/to/logs/directory`
 
 If you run the binary without any parameters, the server will attempt to use the default paths.
+
+## Simple configuration example
+
+Here's a simple `config.toml` configuration.
+
+```toml
+[services.your_service_name]
+domain = "yourservice.com"
+tls.certificate = "/path/to/your/certificate.pem"
+tls.key = "/path/to/your/key.pem"
+
+[[services.your_service_name.locations]]
+source = "/*"
+target = "http://192.168.0.10:8888"
+```
+
+It will start a server on `:80` and `:443` ports.
+
+> [!WARNING]
+> Quark is still in early development. The `.toml` config options might change in future releases, so if you’re using the server as-is, keep an eye on the README and example config in upcoming versions to catch any breaking changes.
 
 ## Minimum Supported Rust Version
 
