@@ -13,14 +13,29 @@ use super::server_utils::{BoxedFrameStream, ProxyHandlerBody};
 pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
     tracing::info!("Serve file : {}", path);
 
-    let file_path = sanitize_path(path);
+    let mut file_path = sanitize_path(path);
 
-    // Default forbidden response if the path is a dir.
     if file_path.is_dir() {
-        return http_response::forbidden();
+        // Try to open index.html.
+        file_path.push("index.html");
+        return match open_file(&file_path).await {
+            Ok(resp) => resp,
+            // Default forbidden response if the path is a dir.
+            Err(_) => http_response::forbidden(),
+        };
     }
 
-    match tokio::fs::File::open(&file_path).await {
+    match open_file(&file_path).await {
+        Ok(resp) => resp,
+        Err(err) => {
+            tracing::error!("Serving file Error: {}", err);
+            http_response::not_found()
+        }
+    }
+}
+
+async fn open_file(file_path: &PathBuf) -> Result<Response<ProxyHandlerBody>, std::io::Error> {
+    match tokio::fs::File::open(file_path).await {
         Ok(file) => {
             let mime_type = mime_guess::from_path(&file_path)
                 .first_or_octet_stream()
@@ -39,13 +54,10 @@ pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
                 .body(body)
                 .unwrap();
 
-            return res;
+            Ok(res)
         }
-        Err(err) => {
-            tracing::error!("Serving file Error: {}", err);
-            return http_response::not_found();
-        }
-    };
+        Err(err) => Err(err),
+    }
 }
 
 fn sanitize_path(path: &str) -> PathBuf {
