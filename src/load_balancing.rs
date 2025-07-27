@@ -5,7 +5,7 @@ use std::{
 
 use twox_hash::XxHash3_64;
 
-use crate::config::Target;
+use crate::config::Locations;
 
 const ALGO_ROUND_ROBIN: &str = "round_robin";
 const ALGO_IP_HASH: &str = "ip_hash";
@@ -22,7 +22,7 @@ pub struct RoundRobinConfig {
 }
 
 impl LoadBalancerConfig {
-    pub fn new(targets: Vec<&Target>) -> Arc<Self> {
+    pub fn new(targets: Vec<&Locations>) -> Arc<Self> {
         let mut round_robin = HashMap::new();
         for target in targets {
             if let Some(algo) = &target.algo {

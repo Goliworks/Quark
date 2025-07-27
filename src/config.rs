@@ -50,8 +50,7 @@ pub struct Server {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ServerParams {
-    pub targets: BTreeMap<String, Target>, // Domain -> Location
-    pub redirections: BTreeMap<String, Redirection>, // Domain -> redirection
+    pub targets: BTreeMap<String, TargetType>, // Domain -> Location
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -62,7 +61,7 @@ pub struct TlsCertificate {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct Target {
+pub struct Locations {
     pub id: u32,
     pub locations: Vec<String>,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
@@ -76,6 +75,12 @@ pub struct Redirection {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub code: u16,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum TargetType {
+    Location(Locations),
+    Redirection(Redirection),
 }
 
 #[derive(FromArgs)]
@@ -111,7 +116,6 @@ impl ServiceConfig {
             let server = Server {
                 params: ServerParams {
                     targets: BTreeMap::new(),
-                    redirections: BTreeMap::new(),
                     auto_tls: None,
                     proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                 },
@@ -127,7 +131,6 @@ impl ServiceConfig {
             let server = Server {
                 params: ServerParams {
                     targets: BTreeMap::new(),
-                    redirections: BTreeMap::new(),
                     auto_tls: None,
                     proxy_timeout: DEFAULT_PROXY_TIMEOUT,
                 },
@@ -284,14 +287,14 @@ fn manage_locations_and_redirections(
             let (backends, algo, weight) = get_backends_config(&location.target, loadbalancers);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
-                Target {
+                TargetType::Location(Locations {
                     id: generate_u32_id(),
                     locations: backends,
                     strict_uri: strict_mode,
                     serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
                     algo,
                     weights: weight,
-                },
+                }),
             );
         }
     }
@@ -300,9 +303,9 @@ fn manage_locations_and_redirections(
         for red in redirections {
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&red.source);
-            server.params.redirections.insert(
+            server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
-                Redirection {
+                TargetType::Redirection(Redirection {
                     location: red.target.clone(),
                     strict_uri: strict_mode,
                     code: match red.code {
@@ -310,7 +313,7 @@ fn manage_locations_and_redirections(
                         Some(code @ (301 | 302 | 307 | 308)) => code,
                         _ => DEFAULT_REDIRECTION_CODE,
                     },
-                },
+                }),
             );
         }
     }
@@ -397,13 +400,13 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
         }
     );
 
-    server.params.redirections.insert(
+    server.params.targets.insert(
         domain,
-        Redirection {
+        TargetType::Redirection(Redirection {
             location: target,
             strict_uri: false,
             code: StatusCode::MOVED_PERMANENTLY.as_u16(),
-        },
+        }),
     );
 }
 

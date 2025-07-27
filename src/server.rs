@@ -23,7 +23,7 @@ use tokio_rustls::TlsAcceptor;
 use tracing::info;
 
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
-use crate::config::{Options, ServiceConfig, Target};
+use crate::config::{Locations, Options, ServiceConfig, TargetType};
 use crate::ipc::{self, IpcMessage};
 use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
 use crate::{load_balancing, logs};
@@ -93,11 +93,14 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // generate loadbalancing configuration.
-    let mut targets: Vec<&Target> = Vec::new();
+    let mut targets: Vec<&Locations> = Vec::new();
     for (_, server) in service_config.servers.iter() {
         for (_, target) in server.params.targets.iter() {
-            if target.algo.is_some() {
-                targets.push(target);
+            match target {
+                TargetType::Location(location) if location.algo.is_some() => {
+                    targets.push(location);
+                }
+                _ => (),
             }
         }
     }

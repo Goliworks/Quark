@@ -9,7 +9,7 @@ use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
 use crate::{
-    config::ServerParams,
+    config::{ServerParams, TargetType},
     http_response, load_balancing,
     server::serve_file,
     utils::{self},
@@ -78,74 +78,75 @@ pub async fn handler(
 
     let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
 
-    match params.redirections.get(match_url.as_str()) {
+    let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
-        Some(redirection) => {
-            return Ok(Response::builder()
-                .status(redirection.code)
-                .header("Location", redirection.location.clone())
-                .body(ProxyHandlerBody::Empty)
-                .unwrap());
-        }
-        // If no strict match, check for a match with the path.
-        None => {
-            let mut uri_path: Option<String> = None;
-            let mut red_code: Option<u16> = None;
-            for (url, target) in params.redirections.iter().rev() {
-                if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
-                    let new_path = match_url.strip_prefix(url);
-                    uri_path = Some(format!(
-                        "{}{}",
-                        utils::remove_last_slash(&target.location),
-                        new_path.unwrap()
-                    ));
-                    red_code = Some(target.code);
-                    break;
-                }
+        Some(target_type) => match target_type {
+            TargetType::Location(target) => {
+                let location =
+                    loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
+                Ok((location, target.serve_files))
             }
-
-            if let Some(uri) = uri_path {
+            TargetType::Redirection(redirection) => {
                 return Ok(Response::builder()
-                    .status(red_code.unwrap())
-                    .header("Location", uri)
+                    .status(redirection.code)
+                    .header("Location", redirection.location.clone())
                     .body(ProxyHandlerBody::Empty)
                     .unwrap());
             }
-        }
-    }
-
-    let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
-        // First, check for a strict match.
-        Some(target) => {
-            let location =
-                loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
-            Ok((location, target.serve_files))
-        }
+        },
         // If no strict match, check for a match with the path.
         None => {
             let mut uri_path: Option<String> = None;
             let mut serve_files: Option<bool> = None;
-            for (url, target) in params.targets.iter().rev() {
-                if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
-                    let new_path = match_url.strip_prefix(url);
-                    let location = loadbalancer.balance(
-                        &target.id,
-                        &target.locations,
-                        &target.algo,
-                        &client_ip,
-                    );
-                    uri_path = Some(format!(
-                        "{}{}",
-                        utils::remove_last_slash(&location),
-                        new_path.unwrap()
-                    ));
-                    serve_files = Some(target.serve_files);
-                    break;
+            let mut red_code: Option<u16> = None; // Http status code if redirection.
+            for (url, target_type) in params.targets.iter().rev() {
+                match target_type {
+                    TargetType::Location(target) => {
+                        if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                            let new_path = match_url.strip_prefix(url);
+                            let location = loadbalancer.balance(
+                                &target.id,
+                                &target.locations,
+                                &target.algo,
+                                &client_ip,
+                            );
+                            uri_path = Some(format!(
+                                "{}{}",
+                                utils::remove_last_slash(&location),
+                                new_path.unwrap()
+                            ));
+                            serve_files = Some(target.serve_files);
+                            break;
+                        }
+                    }
+                    TargetType::Redirection(redirection) => {
+                        if !redirection.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                            let new_path = match_url.strip_prefix(url);
+                            uri_path = Some(format!(
+                                "{}{}",
+                                utils::remove_last_slash(&redirection.location),
+                                new_path.unwrap()
+                            ));
+                            red_code = Some(redirection.code);
+                            break;
+                        }
+                    }
                 }
             }
 
             match uri_path {
-                Some(uri) => Ok((uri, serve_files.unwrap())),
+                Some(uri) => {
+                    // Return the redirection if it exists.
+                    if let Some(code) = red_code {
+                        return Ok(Response::builder()
+                            .status(code)
+                            .header("Location", uri)
+                            .body(ProxyHandlerBody::Empty)
+                            .unwrap());
+                    }
+                    // Or use Location
+                    Ok((uri, serve_files.unwrap()))
+                }
                 None => Err(()),
             }
         }
