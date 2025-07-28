@@ -84,8 +84,9 @@ pub async fn handler(
             TargetType::Location(target) => {
                 let location =
                     loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
-                Ok((location, target.serve_files))
+                Ok((location, false))
             }
+            TargetType::FileServer(file_server) => Ok((file_server.location.clone(), true)),
             TargetType::Redirection(redirection) => {
                 return Ok(Response::builder()
                     .status(redirection.code)
@@ -115,7 +116,19 @@ pub async fn handler(
                                 utils::remove_last_slash(&location),
                                 new_path.unwrap()
                             ));
-                            serve_files = Some(target.serve_files);
+                            serve_files = Some(false);
+                            break;
+                        }
+                    }
+                    TargetType::FileServer(file_server) => {
+                        if !file_server.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                            let new_path = match_url.strip_prefix(url);
+                            uri_path = Some(format!(
+                                "{}{}",
+                                utils::remove_last_slash(&file_server.location),
+                                new_path.unwrap()
+                            ));
+                            serve_files = Some(true);
                             break;
                         }
                     }

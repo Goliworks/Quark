@@ -18,7 +18,6 @@ const DEFAULT_PORT_HTTPS: u16 = 443;
 const DEFAULT_PROXY_TIMEOUT: u64 = 60;
 const DEFAULT_TLS_REDIRECTION: bool = true;
 const DEFAULT_REDIRECTION_CODE: u16 = 301; // Permanent.
-const DEFAULT_SERVE_FILES: bool = false;
 const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
@@ -65,9 +64,14 @@ pub struct Locations {
     pub id: u32,
     pub locations: Vec<String>,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
-    pub serve_files: bool,
     pub algo: Option<String>,
     pub weights: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct FileServer {
+    pub location: String,
+    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -80,6 +84,7 @@ pub struct Redirection {
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum TargetType {
     Location(Locations),
+    FileServer(FileServer),
     Redirection(Redirection),
 }
 
@@ -291,9 +296,20 @@ fn manage_locations_and_redirections(
                     id: generate_u32_id(),
                     locations: backends,
                     strict_uri: strict_mode,
-                    serve_files: location.serve_files.unwrap_or(DEFAULT_SERVE_FILES),
                     algo,
                     weights: weight,
+                }),
+            );
+        }
+    }
+    if let Some(file_server) = &service.file_servers {
+        for fs in file_server {
+            let (source, strict_mode) = source_and_strict_mode(&fs.source);
+            server.params.targets.insert(
+                format!("{}{}", service.domain.clone(), source),
+                TargetType::FileServer(FileServer {
+                    location: fs.target.clone(),
+                    strict_uri: strict_mode,
                 }),
             );
         }

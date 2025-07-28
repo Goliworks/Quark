@@ -40,6 +40,7 @@ pub struct Service {
     pub domain: String,
     pub server: Option<String>,
     pub locations: Option<Vec<Locations>>,
+    pub file_servers: Option<Vec<FileServers>>,
     pub redirections: Option<Vec<Redirections>>,
     pub tls: Option<Tls>,
 }
@@ -55,7 +56,12 @@ pub struct Tls {
 pub struct Locations {
     pub source: String,
     pub target: String,
-    pub serve_files: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FileServers {
+    pub source: String,
+    pub target: String,
 }
 
 #[derive(Debug, Deserialize)]
