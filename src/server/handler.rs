@@ -74,32 +74,31 @@ pub async fn handler(
         }
     }
 
-    // Check for redirections.
-
     let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
 
-    let uri_string: Result<(String, bool), _> = match params.targets.get(match_url.as_str()) {
+    match params.targets.get(match_url.as_str()) {
         // First, check for a strict match.
         Some(target_type) => match target_type {
             TargetType::Location(target) => {
                 let location =
                     loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
-                Ok((location, false))
+                proxy_request(
+                    location, req, params, client, authority, scheme, source_url, client_ip,
+                )
+                .await
             }
-            TargetType::FileServer(file_server) => Ok((file_server.location.clone(), true)),
-            TargetType::Redirection(redirection) => {
-                return Ok(Response::builder()
-                    .status(redirection.code)
-                    .header("Location", redirection.location.clone())
-                    .body(ProxyHandlerBody::Empty)
-                    .unwrap());
+            TargetType::FileServer(file_server) => {
+                let serve_files = serve_file::serve_file(&file_server.location).await;
+                Ok(serve_files)
             }
+            TargetType::Redirection(redirection) => Ok(Response::builder()
+                .status(redirection.code)
+                .header("Location", redirection.location.clone())
+                .body(ProxyHandlerBody::Empty)
+                .unwrap()),
         },
         // If no strict match, check for a match with the path.
         None => {
-            let mut uri_path: Option<String> = None;
-            let mut serve_files: Option<bool> = None;
-            let mut red_code: Option<u16> = None; // Http status code if redirection.
             for (url, target_type) in params.targets.iter().rev() {
                 match target_type {
                     TargetType::Location(target) => {
@@ -111,78 +110,73 @@ pub async fn handler(
                                 &target.algo,
                                 &client_ip,
                             );
-                            uri_path = Some(format!(
+                            let uri_path = format!(
                                 "{}{}",
                                 utils::remove_last_slash(&location),
                                 new_path.unwrap()
-                            ));
-                            serve_files = Some(false);
-                            break;
+                            );
+                            return proxy_request(
+                                uri_path, req, params, client, authority, scheme, source_url,
+                                client_ip,
+                            )
+                            .await;
                         }
                     }
                     TargetType::FileServer(file_server) => {
                         if !file_server.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                             let new_path = match_url.strip_prefix(url);
-                            uri_path = Some(format!(
+                            let uri_path = format!(
                                 "{}{}",
                                 utils::remove_last_slash(&file_server.location),
                                 new_path.unwrap()
-                            ));
-                            serve_files = Some(true);
-                            break;
+                            );
+
+                            let serve_files = serve_file::serve_file(&uri_path).await;
+                            return Ok(serve_files);
                         }
                     }
                     TargetType::Redirection(redirection) => {
                         if !redirection.strict_uri && match_url.as_str().starts_with(url.as_str()) {
                             let new_path = match_url.strip_prefix(url);
-                            uri_path = Some(format!(
+                            let uri_path = format!(
                                 "{}{}",
                                 utils::remove_last_slash(&redirection.location),
                                 new_path.unwrap()
-                            ));
-                            red_code = Some(redirection.code);
-                            break;
+                            );
+
+                            return Ok(Response::builder()
+                                .status(redirection.code)
+                                .header("Location", uri_path)
+                                .body(ProxyHandlerBody::Empty)
+                                .unwrap());
                         }
                     }
                 }
             }
-
-            match uri_path {
-                Some(uri) => {
-                    // Return the redirection if it exists.
-                    if let Some(code) = red_code {
-                        return Ok(Response::builder()
-                            .status(code)
-                            .header("Location", uri)
-                            .body(ProxyHandlerBody::Empty)
-                            .unwrap());
-                    }
-                    // Or use Location
-                    Ok((uri, serve_files.unwrap()))
-                }
-                None => Err(()),
-            }
+            // If no match, return a 500 internal error.
+            return Ok(http_response::internal_server_error());
         }
-    };
+    }
+}
 
+async fn proxy_request(
+    uri: String,
+    req: Request<Incoming>,
+    params: Arc<ServerParams>,
+    client: Arc<Client<HttpConnector, Incoming>>,
+    authority: String,
+    scheme: &str,
+    source_url: String,
+    client_ip: String,
+) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
     // Extract parts and body from the request.
     let (mut parts, body) = req.into_parts();
 
     // Request the targeted server.
-    let mut new_req: Request<Incoming> = match uri_string {
-        Ok((uri, serve_files)) => {
-            if !serve_files {
-                // Build the reverse proxy request
-                parts.uri = uri.parse().unwrap();
-                parts.version = hyper::Version::HTTP_11;
-                Request::from_parts(parts, body)
-            } else {
-                // Serve files. Return directly the response.
-                let sf = serve_file::serve_file(&uri).await;
-                return Ok(sf);
-            }
-        }
-        Err(_) => return Ok(http_response::internal_server_error()),
+    let mut new_req: Request<Incoming> = {
+        parts.uri = uri.parse().unwrap();
+        parts.version = hyper::Version::HTTP_11;
+        Request::from_parts(parts, body)
     };
 
     // Add the Host header to the request.
