@@ -88,7 +88,8 @@ pub async fn handler(
                 .await
             }
             TargetType::FileServer(file_server) => {
-                let serve_files = serve_file::serve_file(&file_server.location).await;
+                let serve_files =
+                    serve_file::serve_file(&file_server.location, "", file_server.spa_mode).await;
                 Ok(serve_files)
             }
             TargetType::Redirection(redirection) => Ok(Response::builder()
@@ -124,14 +125,11 @@ pub async fn handler(
                     }
                     TargetType::FileServer(file_server) => {
                         if !file_server.strict_uri && match_url.as_str().starts_with(url.as_str()) {
-                            let new_path = match_url.strip_prefix(url);
-                            let uri_path = format!(
-                                "{}{}",
-                                utils::remove_last_slash(&file_server.location),
-                                new_path.unwrap()
-                            );
-
-                            let serve_files = serve_file::serve_file(&uri_path).await;
+                            let new_path = match_url.strip_prefix(url).unwrap();
+                            let location = utils::remove_last_slash(&file_server.location);
+                            let serve_files =
+                                serve_file::serve_file(location, new_path, file_server.spa_mode)
+                                    .await;
                             return Ok(serve_files);
                         }
                     }

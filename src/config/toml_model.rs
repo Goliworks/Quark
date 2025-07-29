@@ -62,6 +62,7 @@ pub struct Locations {
 pub struct FileServers {
     pub source: String,
     pub target: String,
+    pub spa_mode: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

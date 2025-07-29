@@ -5,15 +5,38 @@ use http_body_util::StreamBody;
 use hyper::{body::Frame, Response};
 use tokio_util::io::ReaderStream;
 
-use crate::http_response;
+use crate::{http_response, utils};
 
 use super::server_utils::{BoxedFrameStream, ProxyHandlerBody};
 
 // Simple file server.
-pub async fn serve_file(path: &str) -> Response<ProxyHandlerBody> {
-    tracing::info!("Serve file : {}", path);
+pub async fn serve_file(
+    location: &str,
+    new_path: &str,
+    spa_mode: bool,
+) -> Response<ProxyHandlerBody> {
+    let path = format!("{}{}", utils::remove_last_slash(location), new_path);
+    let mut file_path = sanitize_path(&path);
 
-    let mut file_path = sanitize_path(path);
+    // Serve Single Page Application
+    if spa_mode {
+        let spa_file = if file_path.is_file() {
+            file_path
+        } else {
+            PathBuf::from(location).join("index.html")
+        };
+
+        tracing::info!("Serve SPA : {}", path);
+        return match open_file(&spa_file).await {
+            Ok(resp) => resp,
+            Err(err) => {
+                tracing::error!("Serving file Error: {}", err);
+                http_response::not_found()
+            }
+        };
+    }
+
+    tracing::info!("Serve static file : {}", path);
 
     if file_path.is_dir() {
         // Try to open index.html.

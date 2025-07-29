@@ -21,6 +21,7 @@ const DEFAULT_REDIRECTION_CODE: u16 = 301; // Permanent.
 const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
+const DEFAULT_FILE_SERVER_MODE: bool = false;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
@@ -72,6 +73,7 @@ pub struct Locations {
 pub struct FileServer {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub spa_mode: bool,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -305,11 +307,13 @@ fn manage_locations_and_redirections(
     if let Some(file_server) = &service.file_servers {
         for fs in file_server {
             let (source, strict_mode) = source_and_strict_mode(&fs.source);
+            let spa_mode = fs.spa_mode.unwrap_or(DEFAULT_FILE_SERVER_MODE);
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 TargetType::FileServer(FileServer {
                     location: fs.target.clone(),
                     strict_uri: strict_mode,
+                    spa_mode,
                 }),
             );
         }
