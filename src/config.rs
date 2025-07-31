@@ -22,6 +22,7 @@ const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
 const DEFAULT_FILE_SERVER_MODE: bool = false;
+const DEFAULT_FORBIDDEN_DIR: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
@@ -74,6 +75,7 @@ pub struct FileServer {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub spa_mode: bool,
+    pub forbidden_dir: bool,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -314,6 +316,7 @@ fn manage_locations_and_redirections(
                     location: fs.target.clone(),
                     strict_uri: strict_mode,
                     spa_mode,
+                    forbidden_dir: fs.forbidden_dir.unwrap_or(DEFAULT_FORBIDDEN_DIR),
                 }),
             );
         }

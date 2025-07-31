@@ -62,3 +62,24 @@ pub fn generate_u32_id() -> u32 {
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed) as u32;
     counter
 }
+
+const KB: f64 = 1024.0;
+const MB: f64 = KB * 1024.0;
+const GB: f64 = MB * 1024.0;
+const TB: f64 = GB * 1024.0;
+
+pub fn format_size(size: u64) -> String {
+    let size_f = size as f64;
+
+    if size_f < KB {
+        format!("{size} B")
+    } else if size_f < MB {
+        format!("{:.1} KB", size_f / KB)
+    } else if size_f < GB {
+        format!("{:.1} MB", size_f / MB)
+    } else if size_f < TB {
+        format!("{:.1} GB", size_f / GB)
+    } else {
+        format!("{:.1} TB", size_f / TB)
+    }
+}

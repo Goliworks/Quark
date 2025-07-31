@@ -63,6 +63,7 @@ pub struct FileServers {
     pub source: String,
     pub target: String,
     pub spa_mode: Option<bool>,
+    pub forbidden_dir: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
