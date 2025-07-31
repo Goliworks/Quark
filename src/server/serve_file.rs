@@ -73,15 +73,22 @@ async fn display_directory_content(
     file_path.pop(); // Remove index.html
     let mut dir = tokio::fs::read_dir(file_path).await.unwrap();
     let mut html = vec![format!(
-        "<html>\
-        <head><title>Index of {current_path}</title></head>\
-        <body style='margin-top: 25px;\
-        font-family: sans-serif;'>
-        <h1>Index of {current_path}</h1>\
-        <hr/>
-        <table style='width:100%; text-align: left; table-layout: fixed;'>\
+        "<html><head><meta charset=\"UTF-8\">\
+        <title>Index of {current_path}</title>\
+        <style>table {{border-collapse: collapse;}}\
+        tr {{border-bottom: 1px solid #cfcfcf;}}\
+        th, td {{padding: 6px 0;}}</style></head>\
+        <body style=\"margin-top: 25px; font-family: sans-serif;\">\
+        <h1>Index of {current_path}/</h1><hr/>\
+        <table style=\"width:100%; text-align: left; table-layout: fixed;\">\
         <tr><th>Name</th><th>Last modified</th><th>Size</th></tr>",
     )];
+
+    if !current_path.is_empty() {
+        html.push(format!(
+            "<tr><td>↩ <a href=\"{current_path}/..\">..</a></td><td>-</td><td>-</td></tr>"
+        ));
+    }
 
     while let Some(entry) = dir.next_entry().await.unwrap() {
         let path = entry.path();
@@ -95,18 +102,26 @@ async fn display_directory_content(
                 .unwrap();
         let last_modif = datetime.format(&format).unwrap();
         // get and format file size.
-        let size = utils::format_size(metadata.len());
+        let size: String;
+        let icon: &str;
+        if metadata.is_dir() {
+            size = String::from("-");
+            icon = "📁";
+        } else {
+            size = utils::format_size(metadata.len());
+            icon = "📄";
+        };
 
         html.push(format!(
             "<tr>\
-            <td><a href='{file_name}'>{file_name}</a></td>\
+            <td>{icon} <a href=\"{current_path}/{file_name}\">{file_name}</a></td>\
             <td>{last_modif}</td>\
             <td>{size}</td>\
             </tr>",
         ));
     }
 
-    html.push(String::from("</table><hr/></body></html>"));
+    html.push(String::from("</table></body></html>"));
     let html = html.join("\n");
     Response::builder()
         .status(StatusCode::OK)
