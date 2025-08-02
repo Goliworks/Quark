@@ -56,6 +56,17 @@ pub fn extract_vars_from_string(text: &str) -> Vec<String> {
     keys
 }
 
+pub fn get_project_version() -> String {
+    let version = format!("{} v.{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    #[cfg(debug_assertions)]
+    {
+        let git_hash = env!("GIT_HASH");
+        format!("{version}-dev+{git_hash}")
+    }
+    #[cfg(not(debug_assertions))]
+    version
+}
+
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 pub fn generate_u32_id() -> u32 {

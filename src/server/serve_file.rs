@@ -76,8 +76,9 @@ async fn display_directory_content(
         "<html><head><meta charset=\"UTF-8\">\
         <title>Index of {current_path}</title>\
         <style>table {{border-collapse: collapse;}}\
-        tr {{border-bottom: 1px solid #cfcfcf;}}\
-        th, td {{padding: 6px 0;}}</style></head>\
+        tr {{border-bottom: 1px solid #cfcfcf;}}
+        th, td {{padding: 6px 0;}}
+        p {{margin-top: 20px; color: grey;}}</style></head>\
         <body style=\"margin-top: 25px; font-family: sans-serif;\">\
         <h1>Index of {current_path}/</h1><hr/>\
         <table style=\"width:100%; text-align: left; table-layout: fixed;\">\
@@ -120,8 +121,8 @@ async fn display_directory_content(
             </tr>",
         ));
     }
-
-    html.push(String::from("</table></body></html>"));
+    let version = utils::get_project_version();
+    html.push(format!("</table><p>{version}</p></body></html>"));
     let html = html.join("\n");
     Response::builder()
         .status(StatusCode::OK)

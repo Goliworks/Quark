@@ -2,7 +2,7 @@
 use http_body_util::Full;
 use hyper::{Response, StatusCode};
 
-use crate::server::server_utils::ProxyHandlerBody;
+use crate::{server::server_utils::ProxyHandlerBody, utils::get_project_version};
 
 pub fn not_found() -> Response<ProxyHandlerBody> {
     error_builder(StatusCode::NOT_FOUND)
@@ -33,7 +33,7 @@ pub fn bad_request() -> Response<ProxyHandlerBody> {
 }
 
 fn error_builder(status: StatusCode) -> Response<ProxyHandlerBody> {
-    let version = format!("{} v.{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    let version = get_project_version();
     let code = status.as_u16();
     let msg = status.canonical_reason().unwrap();
     let text = format!(
