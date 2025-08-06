@@ -378,13 +378,13 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
     };
     // If the configured domain doesn't start with www, redirect every request
     // that starts with www to the configured domain.
-    if !service.domain.starts_with("www") {
+    if !service.domain.starts_with("www.") {
         domain = format!("www.{}", service.domain);
         target_domain = service.domain.clone();
     // Otherwise, redirect every request that doesn't start with www to www.domain.
     } else {
-        domain = service.domain.clone();
-        target_domain = service.domain.strip_prefix("www.").unwrap().to_string();
+        domain = service.domain.strip_prefix("www.").unwrap().to_string();
+        target_domain = service.domain.clone();
     }
     let target = format!(
         "http{}://{}{}",
