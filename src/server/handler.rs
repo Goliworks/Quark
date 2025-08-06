@@ -68,7 +68,7 @@ pub async fn handler(
         {
             return Ok(Response::builder()
                 .status(StatusCode::PERMANENT_REDIRECT)
-                .header("Location", format!("https://{}{}", dom, path))
+                .header("Location", format!("https://{dom}{path}"))
                 .body(ProxyHandlerBody::Empty)
                 .unwrap());
         }
@@ -217,12 +217,9 @@ async fn proxy_request(
     let future = client.request(new_req);
     let pending_future = timeout(Duration::from_secs(params.proxy_timeout), future).await;
 
-    let response: Result<Response<Incoming>, hyper_util::client::legacy::Error>;
-    match pending_future {
+    let response = match pending_future {
         // Use the response from the future.
-        Ok(res) => {
-            response = res;
-        }
+        Ok(res) => res,
         // Get the error from the timeout and return a 504 error.
         Err(err) => {
             tracing::debug!("Error: {:?}", err);
@@ -237,15 +234,15 @@ async fn proxy_request(
         // It's the data from the targeted server.
         Ok(res) => {
             let res = res.map(ProxyHandlerBody::Incoming);
-            return Ok(res);
+            Ok(res)
         }
         // If the request failed, return a 502 error.
         Err(err) => {
             tracing::debug!("Error: {:?}", err);
             tracing::error!("Bad Gateway | {} -> {}", source_url, dest_url);
-            return Ok(http_response::bad_gateway());
+            Ok(http_response::bad_gateway())
         }
-    };
+    }
 }
 
 fn get_authority_and_domain(

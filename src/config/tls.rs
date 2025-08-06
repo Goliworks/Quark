@@ -77,7 +77,7 @@ impl ResolvesServerCert for SniCertResolver {
             }
 
             //  Try wildcards.
-            let wildcard_name = convert_to_wildcard(&server_name);
+            let wildcard_name = convert_to_wildcard(server_name);
             if let Some(cert) = self.certs.get(&wildcard_name) {
                 tracing::trace!("SNI resolved to: {}", wildcard_name);
                 return Some(cert.load_full());
@@ -143,7 +143,7 @@ fn get_domains_and_ck(cert: &IpcCerts) -> (Vec<String>, Arc<CertifiedKey>) {
 
     let domains: Vec<String> = match parse_x509_certificate(&pem.contents) {
         Ok((_, x509_cert)) => extract_domains_from_x509(&x509_cert),
-        Err(e) => panic!("{:?}", e),
+        Err(e) => panic!("{e:?}"),
     };
 
     (domains, ck)
@@ -193,7 +193,7 @@ pub async fn watch_certs(
     stream: Arc<Mutex<UnixStream>>,
     certs: Vec<TlsCertificate>,
 ) {
-    println!("Watch certificates paths : {:?}", paths_to_watch);
+    println!("Watch certificates paths : {paths_to_watch:?}");
 
     let (mut tx, mut rx) = channel(1);
 
@@ -232,7 +232,7 @@ pub async fn watch_certs(
                     }
                 }
 
-                Err(e) => eprintln!("watch error: {:?}", e),
+                Err(e) => eprintln!("watch error: {e:?}"),
             }
         }
     });
@@ -246,7 +246,7 @@ pub async fn watch_certs(
         for cert in certs.iter() {
             match IpcCerts::build(&cert.cert, &cert.key).await {
                 Ok(certs) => cert_list.push(certs),
-                Err(e) => eprintln!("Error. {}", e),
+                Err(e) => eprintln!("Error. {e}"),
             }
         }
 
@@ -278,10 +278,10 @@ impl IpcCerts {
     pub async fn build(cert: &str, key: &str) -> Result<IpcCerts, String> {
         let certfile = tokio::fs::read(cert)
             .await
-            .map_err(|e| format!("Can't read the certificate {} : {}", cert, e))?;
+            .map_err(|e| format!("Can't read the certificate {cert} : {e}"))?;
         let keyfile = tokio::fs::read(key)
             .await
-            .map_err(|e| format!("Can't read the key {} : {}", key, e))?;
+            .map_err(|e| format!("Can't read the key {key} : {e}"))?;
 
         Ok(IpcCerts {
             cert: certfile,

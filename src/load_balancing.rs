@@ -52,14 +52,14 @@ impl LoadBalancerConfig {
     pub fn balance(
         self: Arc<Self>,
         id: &u32,
-        servers: &Vec<String>,
+        servers: &[String],
         algo: &Option<String>,
         ip: &str,
     ) -> String {
         let srv_nbr = servers.len();
         // Only one server or no loadbalancing config.
         if srv_nbr == 1 {
-            return servers.get(0).unwrap().to_string();
+            return servers.first().unwrap().to_string();
         }
         if let Some(algo) = algo {
             match algo.as_str() {
@@ -89,6 +89,6 @@ impl LoadBalancerConfig {
             }
         }
         // Default.
-        servers.get(0).unwrap().to_string()
+        servers.first().unwrap().to_string()
     }
 }

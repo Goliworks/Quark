@@ -34,7 +34,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = match ipc::connect_to_socket(&socket_path).await {
         Ok(stream) => stream,
         Err(e) => {
-            println!("Failed to connect to parent process: {}", e);
+            println!("Failed to connect to parent process: {e}");
             std::process::exit(1);
         }
     };
@@ -299,7 +299,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 fn create_listener(port: u16, backlog: i32) -> TcpListener {
     // Build TCP Socket and Socket Address.
     let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    let socket_addr: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port).into();
+    let socket_addr: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     // Allow IPv4 connections.
     socket.set_only_v6(false).unwrap();
     // Allow reuse of the address.

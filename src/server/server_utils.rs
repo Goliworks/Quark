@@ -41,7 +41,7 @@ impl hyper::body::Body for ProxyHandlerBody {
             Self::Incoming(incoming) => match Pin::new(incoming).poll_frame(cx) {
                 Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
                 Poll::Ready(Some(Err(err))) => {
-                    eprintln!("Error: {}", err);
+                    eprintln!("Error: {err}");
                     Poll::Ready(Some(Err(std::io::Error::new(
                         std::io::ErrorKind::Other,
                         err,

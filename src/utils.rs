@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 pub const QUARK_USER_AND_GROUP: &str = "quark";
 
 pub fn remove_last_slash(path: &str) -> &str {
-    if path.ends_with("/") {
-        &path[..path.len() - 1]
+    if let Some(p) = path.strip_suffix("/") {
+        p
     } else {
         path
     }
@@ -70,8 +70,7 @@ pub fn get_project_version() -> String {
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 pub fn generate_u32_id() -> u32 {
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed) as u32;
-    counter
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 const KB: f64 = 1024.0;

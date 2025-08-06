@@ -119,7 +119,7 @@ impl ServiceConfig {
         let mut servers: HashMap<String, Server> = HashMap::new();
 
         // Declare all servers defined in the config.
-        for (name, server) in &config.servers.unwrap_or(HashMap::new()) {
+        for (name, server) in &config.servers.unwrap_or_default() {
             let port = server.port.unwrap_or(DEFAULT_PORT);
             let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
             let server = Server {
@@ -150,8 +150,8 @@ impl ServiceConfig {
             servers.insert(MAIN_SERVER_NAME.to_string(), server);
         }
 
-        let services = config.services.unwrap_or(HashMap::new());
-        for (_, service) in &services {
+        let services = config.services.unwrap_or_default();
+        for service in services.values() {
             // if service has TLS configuration, create a server for https.
 
             let mut tls_redirection = false;
@@ -186,7 +186,7 @@ impl ServiceConfig {
                 server,
                 service,
                 if service.tls.is_some() {
-                    https_port.clone()
+                    https_port
                 } else {
                     port
                 },
@@ -196,9 +196,9 @@ impl ServiceConfig {
             // Define if a tls redirection should be done.
             if tls_redirection {
                 let domain = service.domain.clone();
-                let tls_port = https_port.clone();
+                let tls_port = https_port;
                 let tls_domain = if tls_port != DEFAULT_PORT_HTTPS {
-                    format!("{}:{}", domain, tls_port)
+                    format!("{domain}:{tls_port}")
                 } else {
                     domain
                 };
@@ -238,7 +238,7 @@ impl ServiceConfig {
 }
 
 fn get_toml_config(path: String) -> ConfigToml {
-    println!("Loading config from {}", path);
+    println!("Loading config from {path}");
     let toml_str = fs::read_to_string(&path).unwrap();
     let mut config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
@@ -275,7 +275,7 @@ fn import_sub_toml_config(path: &str, dir: &str) -> SubConfigToml {
         PathBuf::from(path)
     };
     let real_path = real_path.to_str().unwrap();
-    let toml_str = fs::read_to_string(&real_path).unwrap();
+    let toml_str = fs::read_to_string(real_path).unwrap();
     let config: SubConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
         panic!("Failed to parse toml file.\nInvalid configuration file.");
     });
@@ -364,8 +364,8 @@ fn get_backends_config(
                 };
 
                 let server_url = server.to_string();
-                let var = format!("${{{}}}", key);
-                let server = server_url.replace(&var, &lb_server);
+                let var = format!("${{{key}}}");
+                let server = server_url.replace(&var, lb_server);
 
                 server_list.push(server.to_string());
                 algo = Some(loadbalancer.algo.clone());
@@ -417,7 +417,7 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
         if tls { "s" } else { "" },
         target_domain,
         if port != default_port {
-            format!(":{}", port)
+            format!(":{port}")
         } else {
             "".to_string()
         }
@@ -434,8 +434,8 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
 }
 
 fn source_and_strict_mode(source: &str) -> (&str, bool) {
-    if source.ends_with("/*") {
-        (&source[..source.len() - 2], false)
+    if let Some(s) = source.strip_suffix("/*") {
+        (s, false)
     } else {
         (utils::remove_last_slash(source), true)
     }

@@ -85,12 +85,12 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
     let mut tls_servers: HashMap<u16, Vec<config::TlsCertificate>> = HashMap::new();
 
-    for (_, server) in &service_config.servers {
+    for server in service_config.servers.values() {
         if let Some(tls_certs) = &server.tls {
             let port = server.https_port;
             tls_servers.insert(port, tls_certs.clone());
-            println!("[Main Process] Server {} is configured with TLS", port);
-            println!("[Main Process] tls {:#?}", tls_certs);
+            println!("[Main Process] Server {port} is configured with TLS");
+            println!("[Main Process] tls {tls_certs:#?}");
             for cert in tls_certs {
                 // Add the certificates path to the list of paths to watch.
                 let path = Path::new(&cert.cert);
@@ -117,13 +117,13 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(certs) => {
                         cert_list.entry(port).or_default().push(certs);
                     }
-                    Err(e) => panic!("Error. {}", e),
+                    Err(e) => panic!("Error. {e}"),
                 }
             }
         }
     }
 
-    println!("[Main Process] paths to watch {:#?}", paths_to_watch_list);
+    println!("[Main Process] paths to watch {paths_to_watch_list:#?}");
 
     // Send the config to the child process.
     let message = ipc::IpcMessage {
