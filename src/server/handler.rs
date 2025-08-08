@@ -74,9 +74,9 @@ pub async fn handler(
         }
     }
 
-    let match_url = format!("{}{}", domain, utils::remove_last_slash(path));
+    let match_url = format!("{domain}{path}");
 
-    match params.targets.get(match_url.as_str()) {
+    match params.targets.get(utils::remove_last_slash(&match_url)) {
         // First, check for a strict match.
         Some(target_type) => match target_type {
             TargetType::Location(target) => {
