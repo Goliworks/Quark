@@ -155,11 +155,7 @@ impl ServiceConfig {
             // if service has TLS configuration, create a server for https.
 
             let mut tls_redirection = false;
-            let server_name = service
-                .server
-                .as_ref()
-                .map(|s| s.as_str())
-                .unwrap_or(MAIN_SERVER_NAME);
+            let server_name = service.server.as_deref().unwrap_or(MAIN_SERVER_NAME);
 
             let server = servers.get_mut(server_name).unwrap();
 
@@ -352,11 +348,10 @@ fn get_backends_config(
     let mut weight: Option<Vec<u32>> = None;
 
     // Only get the first key since you can only have one loadbalancer list.
-    if let Some(key) = keys.get(0) {
+    if let Some(key) = keys.first() {
         if let Some(loadbalancer) = loadbalancers.as_ref().unwrap().get(key) {
-            let mut i = 0;
             let srv_nbr = loadbalancer.backends.len();
-            for lb_server in &loadbalancer.backends {
+            for (i, lb_server) in loadbalancer.backends.iter().enumerate() {
                 let server = if let Some(server) = server_list.get(i) {
                     server
                 } else {
@@ -370,7 +365,6 @@ fn get_backends_config(
                 server_list.push(server.to_string());
                 algo = Some(loadbalancer.algo.clone());
                 weight = manage_weights(srv_nbr, &loadbalancer.weights);
-                i += 1;
             }
         }
     } else {

@@ -102,9 +102,9 @@ fn convert_to_wildcard(server_name: &str) -> String {
         .map(|x| {
             i += 1;
             if i == 1 {
-                return "*";
+                "*"
             } else {
-                return x;
+                x
             }
         })
         .collect();
@@ -152,22 +152,15 @@ fn get_domains_and_ck(cert: &IpcCerts) -> (Vec<String>, Arc<CertifiedKey>) {
 fn extract_domains_from_x509(x509: &X509Certificate) -> Vec<String> {
     let mut domain_names: Vec<String> = Vec::new();
     for ext in x509.extensions() {
-        match ext.parsed_extension() {
-            ParsedExtension::SubjectAlternativeName(san) => {
-                for name in &san.general_names {
-                    match name {
-                        GeneralName::DNSName(dnsn) => {
-                            tracing::trace!("DNSName: {}", dnsn);
-                            domain_names.push(dnsn.to_string());
-                        }
-                        _ => {}
-                    }
+        if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
+            for name in &san.general_names {
+                if let GeneralName::DNSName(dnsn) = name {
+                    tracing::trace!("DNSName: {}", dnsn);
+                    domain_names.push(dnsn.to_string());
                 }
             }
-            _ => {}
         }
     }
-
     domain_names
 }
 

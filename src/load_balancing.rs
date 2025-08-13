@@ -26,23 +26,21 @@ impl LoadBalancerConfig {
         let mut round_robin = HashMap::new();
         for target in targets {
             if let Some(algo) = &target.algo {
-                match algo.as_str() {
-                    ALGO_ROUND_ROBIN => {
-                        let mut rr_config = RoundRobinConfig {
-                            index: AtomicUsize::new(0),
-                            weights_indices: None,
-                        };
-                        // Configure weighted round robin if weights are set.
-                        if let Some(weights) = &target.weights {
-                            let mut weights_indices = vec![];
-                            for (i, &weight) in weights.iter().enumerate() {
-                                weights_indices.extend(std::iter::repeat(i).take(weight as usize));
-                            }
-                            rr_config.weights_indices = Some(weights_indices);
+                // Create a config for round robin if defined.
+                if ALGO_ROUND_ROBIN == algo.as_str() {
+                    let mut rr_config = RoundRobinConfig {
+                        index: AtomicUsize::new(0),
+                        weights_indices: None,
+                    };
+                    // Configure weighted round robin if weights are set.
+                    if let Some(weights) = &target.weights {
+                        let mut weights_indices = vec![];
+                        for (i, &weight) in weights.iter().enumerate() {
+                            weights_indices.extend(std::iter::repeat(i).take(weight as usize));
                         }
-                        round_robin.insert(target.id, rr_config);
+                        rr_config.weights_indices = Some(weights_indices);
                     }
-                    _ => {}
+                    round_robin.insert(target.id, rr_config);
                 }
             }
         }
