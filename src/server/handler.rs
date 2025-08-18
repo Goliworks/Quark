@@ -52,7 +52,6 @@ pub async fn handler(
 
     // Get the path from the request.
     let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-    // Used for logs.
     let source_url = format!("{}://{}{}", scheme, &authority, path);
 
     tracing::info!("Navigate to {}", &source_url);
@@ -91,6 +90,7 @@ pub async fn handler(
                 let serve_files = serve_file::serve_file(
                     &file_server.location,
                     "",
+                    &source_url,
                     file_server.spa_mode,
                     file_server.forbidden_dir,
                 )
@@ -135,6 +135,7 @@ pub async fn handler(
                             let serve_files = serve_file::serve_file(
                                 location,
                                 new_path,
+                                &source_url,
                                 file_server.spa_mode,
                                 file_server.forbidden_dir,
                             )

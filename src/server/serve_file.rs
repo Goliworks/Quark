@@ -16,6 +16,7 @@ use super::server_utils::{BoxedFrameStream, ProxyHandlerBody};
 pub async fn serve_file(
     location: &str,
     new_path: &str,
+    source_url: &str,
     spa_mode: bool,
     forbidden_dir: bool,
 ) -> Response<ProxyHandlerBody> {
@@ -49,9 +50,20 @@ pub async fn serve_file(
             Ok(resp) => resp,
             // Default forbidden response if the path is a dir.
             Err(_) => {
+                // If the path dont ends with slash, redirect to the same path
+                // wi a slash to indicate that the path is a directory.
+                if !source_url.ends_with("/") {
+                    return Response::builder()
+                        .status(StatusCode::PERMANENT_REDIRECT)
+                        .header("Location", format!("{source_url}/"))
+                        .body(ProxyHandlerBody::Empty)
+                        .unwrap();
+                }
+
                 if !forbidden_dir {
                     return display_directory_content(&mut file_path, new_path).await;
                 }
+
                 http_response::forbidden()
             }
         };
@@ -86,9 +98,7 @@ async fn display_directory_content(
     )];
 
     if !current_path.is_empty() {
-        html.push(format!(
-            "<tr><td>↩ <a href=\"{current_path}/..\">..</a></td><td>-</td><td>-</td></tr>"
-        ));
+        html.push("<tr><td>↩ <a href=\"..\">..</a></td><td>-</td><td>-</td></tr>".to_string());
     }
 
     while let Some(entry) = dir.next_entry().await.unwrap() {
@@ -115,7 +125,7 @@ async fn display_directory_content(
 
         html.push(format!(
             "<tr>\
-            <td>{icon} <a href=\"{current_path}/{file_name}\">{file_name}</a></td>\
+            <td>{icon} <a href=\"{file_name}\">{file_name}</a></td>\
             <td>{last_modif}</td>\
             <td>{size}</td>\
             </tr>",
