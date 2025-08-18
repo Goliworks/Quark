@@ -10,7 +10,10 @@ use std::{
 };
 use toml_model::{ConfigToml, SubConfigToml};
 
-use crate::utils::{self, extract_vars_from_string, generate_u32_id};
+use crate::{
+    config::toml_model::FileServers,
+    utils::{self, extract_vars_from_string, generate_u32_id},
+};
 
 const MAIN_SERVER_NAME: &str = "main";
 const DEFAULT_PORT: u16 = 80;
@@ -49,9 +52,11 @@ pub struct Server {
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
+type ServerParamsTargets = BTreeMap<String, TargetType>;
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ServerParams {
-    pub targets: BTreeMap<String, TargetType>, // Domain -> Location
+    pub targets: ServerParamsTargets, // Domain -> Location
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -304,17 +309,7 @@ fn manage_locations_and_redirections(
     }
     if let Some(file_server) = &service.file_servers {
         for fs in file_server {
-            let (source, strict_mode) = source_and_strict_mode(&fs.source);
-            let spa_mode = fs.spa_mode.unwrap_or(DEFAULT_FILE_SERVER_MODE);
-            server.params.targets.insert(
-                format!("{}{}", service.domain.clone(), source),
-                TargetType::FileServer(FileServer {
-                    location: fs.target.clone(),
-                    strict_uri: strict_mode,
-                    spa_mode,
-                    forbidden_dir: fs.forbidden_dir.unwrap_or(DEFAULT_FORBIDDEN_DIR),
-                }),
-            );
+            manage_file_servers(fs, service.domain.clone(), &mut server.params.targets);
         }
     }
     // Redirections.
@@ -332,6 +327,36 @@ fn manage_locations_and_redirections(
                         Some(code @ (301 | 302 | 307 | 308)) => code,
                         _ => DEFAULT_REDIRECTION_CODE,
                     },
+                }),
+            );
+        }
+    }
+}
+
+fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerParamsTargets) {
+    let (source, strict_mode) = source_and_strict_mode(&fs.source);
+    let spa_mode = fs.spa_mode.unwrap_or(DEFAULT_FILE_SERVER_MODE);
+
+    targets.insert(
+        format!("{}{}", domain, source),
+        TargetType::FileServer(FileServer {
+            location: fs.target.clone(),
+            strict_uri: strict_mode,
+            spa_mode,
+            forbidden_dir: DEFAULT_FORBIDDEN_DIR,
+        }),
+    );
+
+    if let Some(ads) = &fs.authorized_dirs {
+        for ad in ads {
+            let (dir, strict_mode, access) = dir_strict_mode_and_access(ad);
+            targets.insert(
+                format!("{}{}{}", domain, source, dir),
+                TargetType::FileServer(FileServer {
+                    location: format!("{}{}", fs.target.clone(), dir),
+                    strict_uri: strict_mode,
+                    spa_mode,
+                    forbidden_dir: access,
                 }),
             );
         }
@@ -425,6 +450,17 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
             code: StatusCode::MOVED_PERMANENTLY.as_u16(),
         }),
     );
+}
+
+fn dir_strict_mode_and_access(path: &str) -> (&str, bool, bool) {
+    if let Some(p) = path.strip_prefix("!") {
+        // forbidden directory.
+        let (source, mode) = source_and_strict_mode(p);
+        (source, mode, true)
+    } else {
+        let (source, mode) = source_and_strict_mode(path);
+        (source, mode, false)
+    }
 }
 
 fn source_and_strict_mode(source: &str) -> (&str, bool) {
