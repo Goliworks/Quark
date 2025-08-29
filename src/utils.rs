@@ -1,5 +1,8 @@
 use nix::unistd::{getuid, setgid, setgroups, setuid, Group, User};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 pub const QUARK_USER_AND_GROUP: &str = "quark";
 
@@ -8,6 +11,18 @@ pub fn remove_last_slash(path: &str) -> &str {
         p
     } else {
         path
+    }
+}
+
+pub fn get_path_and_file(path_str: &str) -> (PathBuf, Option<PathBuf>) {
+    let path = Path::new(path_str);
+
+    if path.is_file() {
+        let parent = path.parent().unwrap_or_else(|| Path::new("")).to_path_buf();
+        let file = path.file_name().map(PathBuf::from);
+        (parent, file)
+    } else {
+        (path.to_path_buf(), None)
     }
 }
 

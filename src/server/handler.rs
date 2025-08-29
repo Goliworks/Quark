@@ -91,8 +91,9 @@ pub async fn handler(
                     &file_server.location,
                     "",
                     &source_url,
-                    file_server.spa_mode,
+                    &file_server.fallback_file,
                     file_server.forbidden_dir,
+                    file_server.is_fallback_404,
                 )
                 .await;
                 Ok(serve_files)
@@ -136,8 +137,9 @@ pub async fn handler(
                                 location,
                                 new_path,
                                 &source_url,
-                                file_server.spa_mode,
+                                &file_server.fallback_file,
                                 file_server.forbidden_dir,
+                                file_server.is_fallback_404,
                             )
                             .await;
                             return Ok(serve_files);

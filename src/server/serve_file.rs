@@ -17,26 +17,28 @@ pub async fn serve_file(
     location: &str,
     new_path: &str,
     source_url: &str,
-    spa_mode: bool,
+    fallback_file: &Option<String>,
     forbidden_dir: bool,
+    has_custom_404: bool,
 ) -> Response<ProxyHandlerBody> {
     let path = format!("{}{}", utils::remove_last_slash(location), new_path);
     let mut file_path = sanitize_path(&path);
 
     // Serve Single Page Application
+    let spa_mode = fallback_file.is_some() && !has_custom_404;
     if spa_mode {
         let spa_file = if file_path.is_file() {
             file_path
         } else {
-            PathBuf::from(location).join("index.html")
+            PathBuf::from(fallback_file.as_ref().unwrap())
         };
 
-        tracing::info!("Serve SPA : {}", path);
+        tracing::info!("Serve Single Page Application : {}", path);
         return match open_file(&spa_file).await {
             Ok(resp) => resp,
             Err(err) => {
-                tracing::error!("Serving file Error: {}", err);
-                http_response::not_found()
+                tracing::error!("SPA main file not found : {}", err);
+                http_response::internal_server_error()
             }
         };
     }

@@ -12,7 +12,7 @@ use toml_model::{ConfigToml, SubConfigToml};
 
 use crate::{
     config::toml_model::FileServers,
-    utils::{self, extract_vars_from_string, generate_u32_id},
+    utils::{self, extract_vars_from_string, generate_u32_id, get_path_and_file},
 };
 
 const MAIN_SERVER_NAME: &str = "main";
@@ -24,7 +24,6 @@ const DEFAULT_REDIRECTION_CODE: u16 = 301; // Permanent.
 const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
-const DEFAULT_FILE_SERVER_MODE: bool = false;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
@@ -79,7 +78,8 @@ pub struct Locations {
 pub struct FileServer {
     pub location: String,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
-    pub spa_mode: bool,
+    pub fallback_file: Option<String>, // for 404 or spa page.
+    pub is_fallback_404: bool, // for 404 http status.
     pub forbidden_dir: bool,
 }
 
@@ -335,14 +335,22 @@ fn manage_locations_and_redirections(
 
 fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerParamsTargets) {
     let (source, strict_mode) = source_and_strict_mode(&fs.source);
-    let spa_mode = fs.spa_mode.unwrap_or(DEFAULT_FILE_SERVER_MODE);
+    let (target, file_name) = get_path_and_file(&fs.target);
+    let target_str = target.to_string_lossy().to_string();
+
+    let file_path = if file_name.is_some() {
+        Some(fs.target.clone())
+    } else {
+        None
+    };
 
     targets.insert(
         format!("{}{}", domain, source),
         TargetType::FileServer(FileServer {
-            location: fs.target.clone(),
+            location: target_str.clone(),
             strict_uri: strict_mode,
-            spa_mode,
+            fallback_file: file_path.clone(),
+            is_fallback_404: false,
             forbidden_dir: DEFAULT_FORBIDDEN_DIR,
         }),
     );
@@ -353,9 +361,10 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
             targets.insert(
                 format!("{}{}{}", domain, source, dir),
                 TargetType::FileServer(FileServer {
-                    location: format!("{}{}", fs.target.clone(), dir),
+                    location: format!("{}{}", target_str.clone(), dir),
                     strict_uri: strict_mode,
-                    spa_mode,
+                    fallback_file: file_path.clone(),
+                    is_fallback_404: false,
                     forbidden_dir: access,
                 }),
             );
