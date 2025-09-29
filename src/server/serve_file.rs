@@ -34,7 +34,7 @@ pub async fn serve_file(
         };
 
         tracing::info!("Serve Single Page Application : {}", path);
-        return match open_file(&spa_file).await {
+        return match open_file(&spa_file, StatusCode::OK).await {
             Ok(resp) => resp,
             Err(err) => {
                 tracing::error!("SPA main file not found : {}", err);
@@ -48,7 +48,7 @@ pub async fn serve_file(
     if file_path.is_dir() {
         // Try to open index.html.
         file_path.push("index.html");
-        return match open_file(&file_path).await {
+        return match open_file(&file_path, StatusCode::OK).await {
             Ok(resp) => resp,
             // Default forbidden response if the path is a dir.
             Err(_) => {
@@ -71,10 +71,22 @@ pub async fn serve_file(
         };
     }
 
-    match open_file(&file_path).await {
+    match open_file(&file_path, StatusCode::OK).await {
         Ok(resp) => resp,
         Err(err) => {
             tracing::error!("Serving file Error: {}", err);
+            // Try to open custom 404 file if defined.
+            if has_custom_404 {
+                let path_404 = PathBuf::from(fallback_file.as_ref().unwrap());
+                return match open_file(&path_404, StatusCode::NOT_FOUND).await {
+                    Ok(resp) => resp,
+                    Err(err) => {
+                        tracing::error!("Custom 404 file not found : {}", err);
+                        http_response::internal_server_error()
+                    }
+                };
+            }
+            // Default not found response.
             http_response::not_found()
         }
     }
@@ -142,7 +154,11 @@ async fn display_directory_content(
         .unwrap()
 }
 
-async fn open_file(file_path: &PathBuf) -> Result<Response<ProxyHandlerBody>, std::io::Error> {
+// Open a file and stream its content in a http response.
+async fn open_file(
+    file_path: &PathBuf,
+    status_code: StatusCode,
+) -> Result<Response<ProxyHandlerBody>, std::io::Error> {
     match tokio::fs::File::open(file_path).await {
         Ok(file) => {
             let mime_type = mime_guess::from_path(file_path)
@@ -157,7 +173,7 @@ async fn open_file(file_path: &PathBuf) -> Result<Response<ProxyHandlerBody>, st
             let body = ProxyHandlerBody::StreamBody(StreamBody::new(boxed_stream));
 
             let res = Response::builder()
-                .status(200)
+                .status(status_code)
                 .header("Content-Type", mime_type)
                 .body(body)
                 .unwrap();

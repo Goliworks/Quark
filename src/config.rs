@@ -337,9 +337,13 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
     let (source, strict_mode) = source_and_strict_mode(&fs.source);
     let (target, file_name) = get_path_and_file(&fs.target);
     let target_str = target.to_string_lossy().to_string();
+    let mut is_fallback_404 = false;
 
     let file_path = if file_name.is_some() {
         Some(fs.target.clone())
+    } else if fs.custom_404.is_some() {
+        is_fallback_404 = true;
+        Some(fs.custom_404.as_ref().unwrap().clone())
     } else {
         None
     };
@@ -350,7 +354,7 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
             location: target_str.clone(),
             strict_uri: strict_mode,
             fallback_file: file_path.clone(),
-            is_fallback_404: false,
+            is_fallback_404,
             forbidden_dir: DEFAULT_FORBIDDEN_DIR,
         }),
     );
@@ -364,7 +368,7 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
                     location: format!("{}{}", target_str.clone(), dir),
                     strict_uri: strict_mode,
                     fallback_file: file_path.clone(),
-                    is_fallback_404: false,
+                    is_fallback_404,
                     forbidden_dir: access,
                 }),
             );

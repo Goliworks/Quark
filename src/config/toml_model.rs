@@ -62,8 +62,8 @@ pub struct Locations {
 pub struct FileServers {
     pub source: String,
     pub target: String,
-    pub spa_mode: Option<bool>,
     pub authorized_dirs: Option<Vec<String>>,
+    pub custom_404: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
