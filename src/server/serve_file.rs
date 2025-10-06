@@ -21,6 +21,7 @@ pub async fn serve_file(
     forbidden_dir: bool,
     has_custom_404: bool,
 ) -> Response<ProxyHandlerBody> {
+    let new_path = utils::get_base_path(new_path); // clean file path.
     let path = format!("{}{}", utils::remove_last_slash(location), new_path);
     let mut file_path = sanitize_path(&path);
 

@@ -26,6 +26,13 @@ pub fn get_path_and_file(path_str: &str) -> (PathBuf, Option<PathBuf>) {
     }
 }
 
+pub fn get_base_path(path: &str) -> &str {
+    match path.find(['?', '#']) {
+        Some(index) => &path[..index],
+        None => path,
+    }
+}
+
 pub fn format_ip(ip: std::net::IpAddr) -> String {
     match ip {
         std::net::IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some() => {
