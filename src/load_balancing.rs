@@ -16,7 +16,7 @@ pub struct LoadBalancerConfig {
 }
 
 #[derive(Debug)]
-pub struct RoundRobinConfig {
+struct RoundRobinConfig {
     pub index: AtomicUsize,
     pub weights_indices: Option<Vec<usize>>,
 }
@@ -88,5 +88,39 @@ impl LoadBalancerConfig {
         }
         // Default.
         servers.first().unwrap().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mock_load_balancer(weights: Option<Vec<u32>>, count: u8) -> Vec<String> {
+        let location = Locations {
+            id: 0,
+            locations: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            strict_uri: false,
+            algo: Some("round_robin".to_string()),
+            weights,
+        };
+        let lb = LoadBalancerConfig::new(vec![&location]);
+        (0..count)
+            .map(|_| {
+                lb.clone()
+                    .balance(&location.id, &location.locations, &location.algo, "1.1.1.1")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_round_robin() {
+        let lb = mock_load_balancer(None, 4);
+        assert_eq!(lb, vec!["a", "b", "c", "a"]);
+    }
+
+    #[test]
+    fn test_weighted_round_robin() {
+        let lb = mock_load_balancer(Some(vec![4, 2, 1]), 8);
+        assert_eq!(lb, vec!["a", "a", "a", "a", "b", "b", "c", "a"]);
     }
 }
