@@ -2,65 +2,76 @@
 # Quark is currently in an early stage of development.
 # Configuration parameters and behavior may change in future releases.
 
-import = ["/path/to/your/config.toml"] # (Optional) List of additional configuration files to import.
+import = [
+  "/path/to/your/config.toml",
+  "/path/to/another/config.toml",
+] # (Optional) List of additional configuration files to import.
 # Note : Only services and load balancers can be configured in an external files.
 
 [global] # (Optional) Global configuration for the server.
-backlog = 4096 # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
+backlog = 4096        # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
 max_connection = 1024 # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
-max_request = 100 # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
+max_request = 100     # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
 [servers.main] # (Optional) Define a server.
-port = 8080 # (Optional) Port used for HTTP connections. (default: 80)
-https_port = 8443 # (Optional) Port used for HTTPS connections. (default: 443)
+port = 8080        # (Optional) Port used for HTTP connections. (default: 80)
+https_port = 8443  # (Optional) Port used for HTTPS connections. (default: 443)
 proxy_timeout = 60 # (Optional) Timeout in seconds for forwarding requests to the backend. (default: 60s)
 
 [services.your_service_name] # Define a new service to be handled by the server.
-domain = "yourservice.com" # Public domain name for this service.
-server = "server_name" # (Optional) Name of the [server.<name>] section to associate with this service. (default: "main")
+domain = "yourservice.com"                        # Public domain name for this service.
+server = "server_name"                            # (Optional) Name of the [server.<name>] section to associate with this service. (default: "main")
 tls.certificate = "/path/to/your/certificate.pem" # (Optional) Path to the TLS/SSL certificate file.
-tls.key = "/path/to/your/key.pem" # (Optional) Path to the private key file for the TLS/SSL certificate.
-tls.redirection = true # (Optional) If true, automatically redirect HTTP requests to HTTPS. (default: true)
+tls.key = "/path/to/your/key.pem"                 # (Optional) Path to the private key file for the TLS/SSL certificate.
+tls.redirection = true                            # (Optional) If true, automatically redirect HTTP requests to HTTPS. (default: true)
 
 # Route all incoming traffic to a backend server.
 # At least one location or redirection must be defined for each service.
 [[services.your_service_name.locations]]
-source = "/*" # Match all incoming requests under the root path.
+source = "/*"                       # Match all incoming requests under the root path.
 target = "http://192.168.0.10:8888" # Forward matched requests to this backend server.
 
-# Serve static files for a specific route.
-[[services.your_service_name.locations]]
-source = "/static/*" # Match all requests starting with /static/.
+# Serve static files for a specific route using the file server mode.
+[[services.your_service_name.file_servers]]
+source = "/static/*"           # Match all requests starting with /static/.
 target = "/path/to/your/files" # Serve files from this local directory.
-serve_files = true # (Optional) Enable file serving for this route. (default: false)
+
+# Serve static website.
+[[services.your_service_name.file_servers]]
+source = "/*"                                        # Match all requests.
+target = "/path/to/your/static/website"              # Serve files from this local directory.
+custom_404 = "/path/to/your/static/website/404.html" # (Optional) Path to a custom 404 page.
+
+# Serve a Single Page Application (SPA) using the file server mode.
+[[services.your_service_name.file_servers]]
+source = "/*"                           # Match all requests.
+target = "/path/to/your/app/index.html" # Target directly the index.html file of your SPA.
 
 # Example of a wildcard redirection that preserves the path suffix.
 [[services.your_service_name.redirections]]
-source = "/redirect/*" # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
+source = "/redirect/*"                  # Match any path starting with /redirect/, e.g., /redirect/page -> /new/page.
 target = "https://yourwebsite.com/new/" # The asterisk (*) at the end of the source path preserves the rest of the original URL.
-code = 301 # (Optional) HTTP redirection. code (default: 301 for permanent, allowed: 301, 302, 307, 308)
+code = 301                              # (Optional) HTTP redirection. code (default: 301 for permanent, allowed: 301, 302, 307, 308)
 
 # Example of an exact path redirection.
 [[services.your_service_name.redirections]]
-source = "/static-path/" # Match only the exact path /static-path/. Does not match /static-path/anything.
+source = "/static-path/"                   # Match only the exact path /static-path/. Does not match /static-path/anything.
 target = "https://yourwebsite.com/static/" # The path is replaced exactly with this URL, without appending any suffix.
-code = 302 # (Optional) Use a temporary redirection code. (default: 301)
+code = 302                                 # (Optional) Use a temporary redirection code. (default: 301)
 
 # Example of load balancing.
 # Configure a load balancer for a service.
 [loadbalancers.my_backends] # Define a new load balancer.
 algo = "round_robin" # (Optional) Load balancing algorithm. (default: "round_robin", allowed: "round_robin", "ip_hash")
-backends = [
-  "172.16.0.10",
-  "172.16.0.20",
-  "172.16.0.40",
-  "172.16.0.50",
-] # List of backend servers.
-weights = [5, 3, 3, 1] # (Optional) Server weights for weighted round robin (must match server count).
+# List of backend servers.
+backends = ["172.16.0.10", "172.16.0.20", "172.16.0.40", "172.16.0.50"]
+# (Optional) Server weights for weighted round robin (must match server count).
+weights = [5, 3, 3, 1]
+
 
 # Use the load balancer for a specific route.
 [[services.your_service_name.locations]]
-source = "/*" # Match all incoming requests under the root path.
+source = "/*"                         # Match all incoming requests under the root path.
 target = "http://${my_backends}:8888" # Forward matched requests to the load balancer backends.
