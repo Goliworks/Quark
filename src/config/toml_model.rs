@@ -43,6 +43,26 @@ pub struct Service {
     pub file_servers: Option<Vec<FileServers>>,
     pub redirections: Option<Vec<Redirections>>,
     pub tls: Option<Tls>,
+    pub headers: Option<Headers>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Headers {
+    pub locations: Option<HeaderType>,
+    pub file_servers: Option<HeaderAction>,
+    pub redirections: Option<HeaderAction>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeaderType {
+    pub request: Option<HeaderAction>,
+    pub response: Option<HeaderAction>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HeaderAction {
+    pub set: Option<HashMap<String, String>>,
+    pub del: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]

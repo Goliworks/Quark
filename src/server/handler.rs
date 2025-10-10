@@ -79,8 +79,12 @@ pub async fn handler(
         // First, check for a strict match.
         Some(target_type) => match target_type {
             TargetType::Location(target) => {
-                let location =
-                    loadbalancer.balance(&target.id, &target.locations, &target.algo, &client_ip);
+                let location = loadbalancer.balance(
+                    &target.id,
+                    &target.params.location,
+                    &target.algo,
+                    &client_ip,
+                );
                 proxy_request(
                     location, req, params, client, authority, scheme, source_url, client_ip,
                 )
@@ -88,7 +92,7 @@ pub async fn handler(
             }
             TargetType::FileServer(file_server) => {
                 let serve_files = serve_file::serve_file(
-                    &file_server.location,
+                    &file_server.params.location,
                     "",
                     &source_url,
                     &file_server.fallback_file,
@@ -100,7 +104,7 @@ pub async fn handler(
             }
             TargetType::Redirection(redirection) => Ok(Response::builder()
                 .status(redirection.code)
-                .header("Location", redirection.location.clone())
+                .header("Location", redirection.params.location.clone())
                 .body(ProxyHandlerBody::Empty)
                 .unwrap()),
         },
@@ -109,11 +113,12 @@ pub async fn handler(
             for (url, target_type) in params.targets.iter().rev() {
                 match target_type {
                     TargetType::Location(target) => {
-                        if !target.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                        if !target.params.strict_uri && match_url.as_str().starts_with(url.as_str())
+                        {
                             let new_path = match_url.strip_prefix(url);
                             let location = loadbalancer.balance(
                                 &target.id,
-                                &target.locations,
+                                &target.params.location,
                                 &target.algo,
                                 &client_ip,
                             );
@@ -130,9 +135,11 @@ pub async fn handler(
                         }
                     }
                     TargetType::FileServer(file_server) => {
-                        if !file_server.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                        if !file_server.params.strict_uri
+                            && match_url.as_str().starts_with(url.as_str())
+                        {
                             let new_path = match_url.strip_prefix(url).unwrap();
-                            let location = utils::remove_last_slash(&file_server.location);
+                            let location = utils::remove_last_slash(&file_server.params.location);
                             let serve_files = serve_file::serve_file(
                                 location,
                                 new_path,
@@ -146,11 +153,13 @@ pub async fn handler(
                         }
                     }
                     TargetType::Redirection(redirection) => {
-                        if !redirection.strict_uri && match_url.as_str().starts_with(url.as_str()) {
+                        if !redirection.params.strict_uri
+                            && match_url.as_str().starts_with(url.as_str())
+                        {
                             let new_path = match_url.strip_prefix(url);
                             let uri_path = format!(
                                 "{}{}",
-                                utils::remove_last_slash(&redirection.location),
+                                utils::remove_last_slash(&redirection.params.location),
                                 new_path.unwrap()
                             );
 

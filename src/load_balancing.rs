@@ -93,21 +93,30 @@ impl LoadBalancerConfig {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::TargetParams;
+
     use super::*;
 
     fn mock_load_balancer(weights: Option<Vec<u32>>, count: u8) -> Vec<String> {
         let location = Locations {
             id: 0,
-            locations: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-            strict_uri: false,
+            params: TargetParams {
+                location: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+                strict_uri: false,
+                headers: None,
+            },
             algo: Some("round_robin".to_string()),
             weights,
         };
         let lb = LoadBalancerConfig::new(vec![&location]);
         (0..count)
             .map(|_| {
-                lb.clone()
-                    .balance(&location.id, &location.locations, &location.algo, "1.1.1.1")
+                lb.clone().balance(
+                    &location.id,
+                    &location.params.location,
+                    &location.algo,
+                    "1.1.1.1",
+                )
             })
             .collect()
     }

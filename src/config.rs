@@ -68,26 +68,30 @@ pub struct TlsCertificate {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Locations {
     pub id: u32,
-    pub locations: Vec<String>,
-    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub params: TargetParams<Vec<String>>,
     pub algo: Option<String>,
     pub weights: Option<Vec<u32>>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct FileServer {
-    pub location: String,
-    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub params: TargetParams<String>,
     pub fallback_file: Option<String>, // for 404 or spa page.
-    pub is_fallback_404: bool, // for 404 http status.
+    pub is_fallback_404: bool,         // for 404 http status.
     pub forbidden_dir: bool,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Redirection {
-    pub location: String,
-    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub params: TargetParams<String>,
     pub code: u16,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct TargetParams<T> {
+    pub location: T,
+    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
+    pub headers: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -241,8 +245,9 @@ impl ServiceConfig {
 fn get_toml_config(path: String) -> ConfigToml {
     println!("Loading config from {path}");
     let toml_str = fs::read_to_string(&path).unwrap();
-    let mut config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
-        panic!("Failed to parse toml file.\nInvalid configuration file.");
+    let mut config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|e| {
+        eprintln!("Failed to parse toml file.\nInvalid configuration file.\n{e}");
+        std::process::exit(1);
     });
     // import subconfiguration.
     if let Some(subconf) = &config.import {
@@ -299,8 +304,11 @@ fn manage_locations_and_redirections(
                 format!("{}{}", service.domain.clone(), source),
                 TargetType::Location(Locations {
                     id: generate_u32_id(),
-                    locations: backends,
-                    strict_uri: strict_mode,
+                    params: TargetParams {
+                        location: backends,
+                        strict_uri: strict_mode,
+                        headers: None,
+                    },
                     algo,
                     weights: weight,
                 }),
@@ -320,8 +328,11 @@ fn manage_locations_and_redirections(
             server.params.targets.insert(
                 format!("{}{}", service.domain.clone(), source),
                 TargetType::Redirection(Redirection {
-                    location: red.target.clone(),
-                    strict_uri: strict_mode,
+                    params: TargetParams {
+                        location: red.target.clone(),
+                        strict_uri: strict_mode,
+                        headers: None,
+                    },
                     code: match red.code {
                         // Available redirection codes.
                         Some(code @ (301 | 302 | 307 | 308)) => code,
@@ -351,8 +362,11 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
     targets.insert(
         format!("{}{}", domain, source),
         TargetType::FileServer(FileServer {
-            location: target_str.clone(),
-            strict_uri: strict_mode,
+            params: TargetParams {
+                location: target_str.clone(),
+                strict_uri: strict_mode,
+                headers: None,
+            },
             fallback_file: file_path.clone(),
             is_fallback_404,
             forbidden_dir: DEFAULT_FORBIDDEN_DIR,
@@ -365,8 +379,11 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
             targets.insert(
                 format!("{}{}{}", domain, source, dir),
                 TargetType::FileServer(FileServer {
-                    location: format!("{}{}", target_str.clone(), dir),
-                    strict_uri: strict_mode,
+                    params: TargetParams {
+                        location: format!("{}{}", target_str.clone(), dir),
+                        strict_uri: strict_mode,
+                        headers: None,
+                    },
                     fallback_file: file_path.clone(),
                     is_fallback_404,
                     forbidden_dir: access,
@@ -458,8 +475,11 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
     server.params.targets.insert(
         domain,
         TargetType::Redirection(Redirection {
-            location: target,
-            strict_uri: false,
+            params: TargetParams {
+                location: target,
+                strict_uri: false,
+                headers: None,
+            },
             code: StatusCode::MOVED_PERMANENTLY.as_u16(),
         }),
     );
