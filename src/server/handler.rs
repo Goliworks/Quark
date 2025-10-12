@@ -79,6 +79,7 @@ pub async fn handler(
         // First, check for a strict match.
         Some(target_type) => match target_type {
             TargetType::Location(target) => {
+                println!("Matched target: {:#?}", target);
                 let location = loadbalancer.balance(
                     &target.id,
                     &target.params.location,

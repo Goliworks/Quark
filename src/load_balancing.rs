@@ -93,7 +93,7 @@ impl LoadBalancerConfig {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::TargetParams;
+    use crate::config::{ConfigHeaders, TargetParams};
 
     use super::*;
 
@@ -103,7 +103,7 @@ mod tests {
             params: TargetParams {
                 location: vec!["a".to_string(), "b".to_string(), "c".to_string()],
                 strict_uri: false,
-                headers: None,
+                headers: ConfigHeaders::default(),
             },
             algo: Some("round_robin".to_string()),
             weights,

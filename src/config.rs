@@ -11,7 +11,7 @@ use std::{
 use toml_model::{ConfigToml, SubConfigToml};
 
 use crate::{
-    config::toml_model::FileServers,
+    config::toml_model::{FileServers, HeaderAction, Headers},
     utils::{self, extract_vars_from_string, generate_u32_id, get_path_and_file},
 };
 
@@ -91,7 +91,19 @@ pub struct Redirection {
 pub struct TargetParams<T> {
     pub location: T,
     pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
-    pub headers: Option<HashMap<String, String>>,
+    pub headers: ConfigHeaders,
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default)]
+pub struct ConfigHeaders {
+    pub request: Option<ConfigHeadersActions>,
+    pub response: Option<ConfigHeadersActions>,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct ConfigHeadersActions {
+    pub set: Option<HashMap<String, String>>,
+    pub del: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -293,8 +305,11 @@ fn manage_locations_and_redirections(
     service: &toml_model::Service,
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
 ) {
-    // Other locations
+    // Manage headers
+    let (l_headers, r_headers, fs_headers) = manage_headers(&service.headers);
+    // Locations
     if let Some(locations) = &service.locations {
+        // Manage locations.
         for location in locations {
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&location.source);
@@ -307,7 +322,7 @@ fn manage_locations_and_redirections(
                     params: TargetParams {
                         location: backends,
                         strict_uri: strict_mode,
-                        headers: None,
+                        headers: l_headers.clone(),
                     },
                     algo,
                     weights: weight,
@@ -317,11 +332,17 @@ fn manage_locations_and_redirections(
     }
     if let Some(file_server) = &service.file_servers {
         for fs in file_server {
-            manage_file_servers(fs, service.domain.clone(), &mut server.params.targets);
+            manage_file_servers(
+                fs,
+                service.domain.clone(),
+                &mut server.params.targets,
+                &fs_headers,
+            );
         }
     }
     // Redirections.
     if let Some(redirections) = &service.redirections {
+        // Manage redirections.
         for red in redirections {
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&red.source);
@@ -331,7 +352,7 @@ fn manage_locations_and_redirections(
                     params: TargetParams {
                         location: red.target.clone(),
                         strict_uri: strict_mode,
-                        headers: None,
+                        headers: r_headers.clone(),
                     },
                     code: match red.code {
                         // Available redirection codes.
@@ -344,7 +365,57 @@ fn manage_locations_and_redirections(
     }
 }
 
-fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerParamsTargets) {
+fn manage_headers(
+    headers: &Option<Headers>,
+) -> (
+    ConfigHeaders, // Location
+    ConfigHeaders, // Redirection
+    ConfigHeaders, // FileServer
+) {
+    let mut l_headers = ConfigHeaders::default();
+    let mut r_headers = ConfigHeaders::default();
+    let mut fs_headers = ConfigHeaders::default();
+    if let Some(h) = headers {
+        if let Some(locations) = &h.locations {
+            if let Some(request) = &locations.request {
+                l_headers.request = Some(process_headers_set_del(request));
+            }
+            if let Some(response) = &locations.response {
+                l_headers.response = Some(process_headers_set_del(response));
+            }
+        }
+        if let Some(response) = &h.redirections {
+            r_headers.response = Some(process_headers_set_del(response));
+        }
+        if let Some(response) = &h.file_servers {
+            fs_headers.response = Some(process_headers_set_del(response));
+        }
+    }
+
+    (l_headers, r_headers, fs_headers)
+}
+
+fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {
+    let mut config_action = ConfigHeadersActions {
+        set: None,
+        del: None,
+    };
+
+    if let Some(set) = &action.set {
+        config_action.set = Some(set.clone());
+    }
+    if let Some(del) = &action.del {
+        config_action.del = Some(del.clone());
+    }
+    config_action
+}
+
+fn manage_file_servers(
+    fs: &FileServers,
+    domain: String,
+    targets: &mut ServerParamsTargets,
+    headers: &ConfigHeaders,
+) {
     let (source, strict_mode) = source_and_strict_mode(&fs.source);
     let (target, file_name) = get_path_and_file(&fs.target);
     let target_str = target.to_string_lossy().to_string();
@@ -365,7 +436,7 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
             params: TargetParams {
                 location: target_str.clone(),
                 strict_uri: strict_mode,
-                headers: None,
+                headers: headers.clone(),
             },
             fallback_file: file_path.clone(),
             is_fallback_404,
@@ -382,7 +453,7 @@ fn manage_file_servers(fs: &FileServers, domain: String, targets: &mut ServerPar
                     params: TargetParams {
                         location: format!("{}{}", target_str.clone(), dir),
                         strict_uri: strict_mode,
-                        headers: None,
+                        headers: ConfigHeaders::default(),
                     },
                     fallback_file: file_path.clone(),
                     is_fallback_404,
@@ -478,7 +549,7 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
             params: TargetParams {
                 location: target,
                 strict_uri: false,
-                headers: None,
+                headers: ConfigHeaders::default(),
             },
             code: StatusCode::MOVED_PERMANENTLY.as_u16(),
         }),

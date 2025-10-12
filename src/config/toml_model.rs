@@ -62,7 +62,7 @@ pub struct HeaderType {
 #[derive(Debug, Deserialize)]
 pub struct HeaderAction {
     pub set: Option<HashMap<String, String>>,
-    pub del: Option<HashMap<String, String>>,
+    pub del: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
