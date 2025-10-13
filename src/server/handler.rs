@@ -9,9 +9,9 @@ use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
 use crate::{
-    config::{ServerParams, TargetType},
+    config::{ConfigHeaders, ServerParams, TargetType},
     http_response, load_balancing,
-    server::serve_file,
+    server::{serve_file, server_utils::custom_headers},
     utils::{self},
 };
 
@@ -79,7 +79,6 @@ pub async fn handler(
         // First, check for a strict match.
         Some(target_type) => match target_type {
             TargetType::Location(target) => {
-                println!("Matched target: {:#?}", target);
                 let location = loadbalancer.balance(
                     &target.id,
                     &target.params.location,
@@ -87,7 +86,15 @@ pub async fn handler(
                     &client_ip,
                 );
                 proxy_request(
-                    location, req, params, client, authority, scheme, source_url, client_ip,
+                    location,
+                    req,
+                    &params,
+                    client,
+                    &target.params.headers,
+                    authority,
+                    scheme,
+                    source_url,
+                    client_ip,
                 )
                 .await
             }
@@ -129,7 +136,14 @@ pub async fn handler(
                                 new_path.unwrap()
                             );
                             return proxy_request(
-                                uri_path, req, params, client, authority, scheme, source_url,
+                                uri_path,
+                                req,
+                                &params,
+                                client,
+                                &target.params.headers,
+                                authority,
+                                scheme,
+                                source_url,
                                 client_ip,
                             )
                             .await;
@@ -182,8 +196,9 @@ pub async fn handler(
 async fn proxy_request(
     uri: String,
     req: Request<Incoming>,
-    params: Arc<ServerParams>,
+    params: &ServerParams,
     client: Arc<Client<HttpConnector, Incoming>>,
+    headers: &ConfigHeaders,
     authority: String,
     scheme: &str,
     source_url: String,
@@ -222,6 +237,11 @@ async fn proxy_request(
         HeaderValue::from_str(scheme).unwrap(),
     );
 
+    // Add or remove headers defined in the config file.
+    if let Some(h) = &headers.request {
+        custom_headers(&mut new_req, h);
+    }
+
     // Destination URL for logs.
     let dest_url = new_req.uri().to_string();
 
@@ -246,7 +266,11 @@ async fn proxy_request(
         // If the request succeeded, return the response.
         // It's the data from the targeted server.
         Ok(res) => {
-            let res = res.map(ProxyHandlerBody::Incoming);
+            let mut res = res.map(ProxyHandlerBody::Incoming);
+            // Add or remove headers defined in the config file.
+            if let Some(response) = &headers.response {
+                custom_headers(&mut res, response);
+            }
             Ok(res)
         }
         // If the request failed, return a 502 error.

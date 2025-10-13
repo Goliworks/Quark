@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -9,8 +10,9 @@ use std::{
 use http_body_util::{Full, StreamBody};
 use hyper::{
     body::{Bytes, Frame, Incoming},
+    header::{HeaderName, HeaderValue},
     service::service_fn,
-    Request, Response,
+    HeaderMap, Request, Response,
 };
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
@@ -18,6 +20,8 @@ use hyper_util::{
 };
 use nix::unistd::getuid;
 use tokio::net::TcpListener;
+
+use crate::config::ConfigHeadersActions;
 
 pub type BoxedFrameStream =
     Pin<Box<dyn futures::Stream<Item = Result<Frame<Bytes>, std::io::Error>> + Send + 'static>>;
@@ -60,6 +64,39 @@ impl hyper::body::Body for ProxyHandlerBody {
             },
             Self::StreamBody(stream_body) => Pin::new(stream_body).poll_frame(cx),
             Self::Empty => Poll::Ready(None),
+        }
+    }
+}
+
+pub trait HasMutableHeaders {
+    fn headers_mut(&mut self) -> &mut HeaderMap;
+}
+
+impl<T> HasMutableHeaders for Request<T> {
+    fn headers_mut(&mut self) -> &mut HeaderMap {
+        self.headers_mut()
+    }
+}
+
+impl<T> HasMutableHeaders for Response<T> {
+    fn headers_mut(&mut self) -> &mut HeaderMap {
+        self.headers_mut()
+    }
+}
+
+pub fn custom_headers<T: HasMutableHeaders>(req: &mut T, headers_actions: &ConfigHeadersActions) {
+    if let Some(h) = &headers_actions.set {
+        for (k, v) in h {
+            req.headers_mut().insert(
+                HeaderName::from_str(k).unwrap(),
+                HeaderValue::from_str(v).unwrap(),
+            );
+        }
+    }
+
+    if let Some(h) = &headers_actions.del {
+        for k in h {
+            req.headers_mut().remove(HeaderName::from_str(k).unwrap());
         }
     }
 }
