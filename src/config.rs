@@ -306,7 +306,7 @@ fn manage_locations_and_redirections(
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
 ) {
     // Manage headers
-    let (l_headers, r_headers, fs_headers) = manage_headers(&service.headers);
+    let (l_headers, fs_headers) = manage_headers(&service.headers);
     // Locations
     if let Some(locations) = &service.locations {
         // Manage locations.
@@ -352,7 +352,7 @@ fn manage_locations_and_redirections(
                     params: TargetParams {
                         location: red.target.clone(),
                         strict_uri: strict_mode,
-                        headers: r_headers.clone(),
+                        headers: ConfigHeaders::default(),
                     },
                     code: match red.code {
                         // Available redirection codes.
@@ -369,11 +369,9 @@ fn manage_headers(
     headers: &Option<Headers>,
 ) -> (
     ConfigHeaders, // Location
-    ConfigHeaders, // Redirection
     ConfigHeaders, // FileServer
 ) {
     let mut l_headers = ConfigHeaders::default();
-    let mut r_headers = ConfigHeaders::default();
     let mut fs_headers = ConfigHeaders::default();
     if let Some(h) = headers {
         if let Some(locations) = &h.locations {
@@ -384,15 +382,12 @@ fn manage_headers(
                 l_headers.response = Some(process_headers_set_del(response));
             }
         }
-        if let Some(response) = &h.redirections {
-            r_headers.response = Some(process_headers_set_del(response));
-        }
         if let Some(response) = &h.file_servers {
             fs_headers.response = Some(process_headers_set_del(response));
         }
     }
 
-    (l_headers, r_headers, fs_headers)
+    (l_headers, fs_headers)
 }
 
 fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {

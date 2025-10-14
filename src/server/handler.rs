@@ -99,7 +99,7 @@ pub async fn handler(
                 .await
             }
             TargetType::FileServer(file_server) => {
-                let serve_files = serve_file::serve_file(
+                let mut serve_files = serve_file::serve_file(
                     &file_server.params.location,
                     "",
                     &source_url,
@@ -108,6 +108,11 @@ pub async fn handler(
                     file_server.is_fallback_404,
                 )
                 .await;
+
+                if let Some(response) = &file_server.params.headers.response {
+                    custom_headers(&mut serve_files, response);
+                }
+
                 Ok(serve_files)
             }
             TargetType::Redirection(redirection) => Ok(Response::builder()
@@ -155,7 +160,7 @@ pub async fn handler(
                         {
                             let new_path = match_url.strip_prefix(url).unwrap();
                             let location = utils::remove_last_slash(&file_server.params.location);
-                            let serve_files = serve_file::serve_file(
+                            let mut serve_files = serve_file::serve_file(
                                 location,
                                 new_path,
                                 &source_url,
@@ -164,6 +169,11 @@ pub async fn handler(
                                 file_server.is_fallback_404,
                             )
                             .await;
+
+                            if let Some(response) = &file_server.params.headers.response {
+                                custom_headers(&mut serve_files, response);
+                            }
+
                             return Ok(serve_files);
                         }
                     }

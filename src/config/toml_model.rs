@@ -50,7 +50,6 @@ pub struct Service {
 pub struct Headers {
     pub locations: Option<HeaderType>,
     pub file_servers: Option<HeaderAction>,
-    pub redirections: Option<HeaderAction>,
 }
 
 #[derive(Debug, Deserialize)]
