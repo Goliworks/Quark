@@ -100,7 +100,7 @@ pub struct ConfigHeaders {
     pub response: Option<ConfigHeadersActions>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct ConfigHeadersActions {
     pub set: Option<HashMap<String, String>>,
     pub del: Option<Vec<String>>,
@@ -311,6 +311,18 @@ fn manage_locations_and_redirections(
     if let Some(locations) = &service.locations {
         // Manage locations.
         for location in locations {
+            // Custom headers for this specific location.
+            let mut headers = l_headers.clone();
+            if let Some(lh) = &location.headers {
+                // Request headers.
+                if let Some(l_req) = &lh.request {
+                    merge_headers_actions(l_req, &mut headers.request);
+                }
+                // Response headers.
+                if let Some(l_res) = &lh.response {
+                    merge_headers_actions(l_res, &mut headers.response);
+                }
+            }
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&location.source);
             // Get all backends info required for load balancing.
@@ -322,7 +334,7 @@ fn manage_locations_and_redirections(
                     params: TargetParams {
                         location: backends,
                         strict_uri: strict_mode,
-                        headers: l_headers.clone(),
+                        headers,
                     },
                     algo,
                     weights: weight,
@@ -391,11 +403,7 @@ fn manage_headers(
 }
 
 fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {
-    let mut config_action = ConfigHeadersActions {
-        set: None,
-        del: None,
-    };
-
+    let mut config_action = ConfigHeadersActions::default();
     if let Some(set) = &action.set {
         config_action.set = Some(set.clone());
     }
@@ -403,6 +411,27 @@ fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {
         config_action.del = Some(del.clone());
     }
     config_action
+}
+
+fn merge_headers_actions(ha: &HeaderAction, cha: &mut Option<ConfigHeadersActions>) {
+    let actions = process_headers_set_del(ha);
+    let target = cha.get_or_insert_default();
+
+    merge_option_collections(&mut target.set, actions.set);
+    merge_option_collections(&mut target.del, actions.del);
+}
+
+fn merge_option_collections<T>(target: &mut Option<T>, source: Option<T>)
+where
+    T: Extend<T::Item> + IntoIterator,
+{
+    match (target.as_mut(), source) {
+        (Some(t), Some(s)) => {
+            t.extend(s);
+        }
+        (None, Some(s)) => *target = Some(s),
+        _ => (),
+    }
 }
 
 fn manage_file_servers(
@@ -424,6 +453,12 @@ fn manage_file_servers(
     } else {
         None
     };
+
+    // Custom headers for this specific file server.
+    let mut headers = headers.clone();
+    if let Some(ha) = &fs.headers {
+        merge_headers_actions(ha, &mut headers.response);
+    }
 
     targets.insert(
         format!("{}{}", domain, source),
@@ -448,7 +483,7 @@ fn manage_file_servers(
                     params: TargetParams {
                         location: format!("{}{}", target_str.clone(), dir),
                         strict_uri: strict_mode,
-                        headers: ConfigHeaders::default(),
+                        headers: headers.clone(),
                     },
                     fallback_file: file_path.clone(),
                     is_fallback_404,

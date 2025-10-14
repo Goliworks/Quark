@@ -75,6 +75,7 @@ pub struct Tls {
 pub struct Locations {
     pub source: String,
     pub target: String,
+    pub headers: Option<HeaderType>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +84,7 @@ pub struct FileServers {
     pub target: String,
     pub authorized_dirs: Option<Vec<String>>,
     pub custom_404: Option<String>,
+    pub headers: Option<HeaderAction>,
 }
 
 #[derive(Debug, Deserialize)]
