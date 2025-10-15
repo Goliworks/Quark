@@ -100,7 +100,7 @@ pub struct ConfigHeaders {
     pub response: Option<ConfigHeadersActions>,
 }
 
-#[derive(Debug, Clone, Encode, Decode, Default)]
+#[derive(Debug, Clone, Encode, Decode, Default, PartialEq, Eq)]
 pub struct ConfigHeadersActions {
     pub set: Option<HashMap<String, String>>,
     pub del: Option<Vec<String>>,
@@ -602,5 +602,86 @@ fn source_and_strict_mode(source: &str) -> (&str, bool) {
         (s, false)
     } else {
         (utils::remove_last_slash(source), true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header_action_mock() -> HeaderAction {
+        HeaderAction {
+            set: Some(HashMap::from([
+                ("set1".to_string(), "ha1".to_string()),
+                ("set2".to_string(), "ha2".to_string()),
+            ])),
+            del: Some(vec!["del1".to_string(), "del2".to_string()]),
+        }
+    }
+
+    #[test]
+    fn test_merge_headers_actions() {
+        let ha = header_action_mock();
+        let mut cha = Some(ConfigHeadersActions {
+            set: Some(HashMap::from([
+                ("set2".to_string(), "cha1".to_string()),
+                ("set3".to_string(), "cha2".to_string()),
+            ])),
+            del: Some(vec!["del3".to_string()]),
+        });
+        merge_headers_actions(&ha, &mut cha);
+        cha.as_mut().unwrap().del.as_mut().unwrap().sort();
+        let expected = Some(ConfigHeadersActions {
+            set: Some(HashMap::from([
+                ("set1".to_string(), "ha1".to_string()),
+                ("set2".to_string(), "ha2".to_string()),
+                ("set3".to_string(), "cha2".to_string()),
+            ])),
+            del: Some(vec![
+                "del1".to_string(),
+                "del2".to_string(),
+                "del3".to_string(),
+            ]),
+        });
+        assert_eq!(cha, expected);
+    }
+
+    #[test]
+    fn test_merge_headers_actions_ha_empty() {
+        let ha = header_action_mock();
+        let mut cha = None;
+        merge_headers_actions(&ha, &mut cha);
+        let expected = Some(ConfigHeadersActions {
+            set: Some(HashMap::from([
+                ("set1".to_string(), "ha1".to_string()),
+                ("set2".to_string(), "ha2".to_string()),
+            ])),
+            del: Some(vec!["del1".to_string(), "del2".to_string()]),
+        });
+        assert_eq!(cha, expected);
+    }
+
+    #[test]
+    fn test_merge_headers_actions_cha_empty() {
+        let ha = HeaderAction {
+            set: None,
+            del: None,
+        };
+        let mut cha = Some(ConfigHeadersActions {
+            set: Some(HashMap::from([
+                ("set1".to_string(), "cha1".to_string()),
+                ("set2".to_string(), "cha2".to_string()),
+            ])),
+            del: Some(vec!["del1".to_string()]),
+        });
+        merge_headers_actions(&ha, &mut cha);
+        let expected = Some(ConfigHeadersActions {
+            set: Some(HashMap::from([
+                ("set1".to_string(), "cha1".to_string()),
+                ("set2".to_string(), "cha2".to_string()),
+            ])),
+            del: Some(vec!["del1".to_string()]),
+        });
+        assert_eq!(cha, expected);
     }
 }
