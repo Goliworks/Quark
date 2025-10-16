@@ -20,6 +20,26 @@ port = 8080        # (Optional) Port used for HTTP connections. (default: 80)
 https_port = 8443  # (Optional) Port used for HTTPS connections. (default: 443)
 proxy_timeout = 60 # (Optional) Timeout in seconds for forwarding requests to the backend. (default: 60s)
 
+# (Optional) Headers at server level (apply to all services on this server)
+[servers.main.headers.locations]
+request.set."Header-To-Set" = "value" # (Optionnal) Add or override a request header before forwarding to backend.
+request.set."Header-To-Set-2" = "value"
+request.del = [
+  "Header-To-Delete",
+  "Header-To-Delete-2",
+] # (Optional) Remove specific request headers from the incoming request.
+response.set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+response.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
+
+# (Optionnal) # Headers applied when serving static files directly from the server.
+[servers.main.headers.file_servers]
+set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
+
 [services.your_service_name] # Define a new service to be handled by the server.
 domain = "yourservice.com"                        # Public domain name for this service.
 server = "server_name"                            # (Optional) Name of the [server.<name>] section to associate with this service. (default: "main")
@@ -27,16 +47,46 @@ tls.certificate = "/path/to/your/certificate.pem" # (Optional) Path to the TLS/S
 tls.key = "/path/to/your/key.pem"                 # (Optional) Path to the private key file for the TLS/SSL certificate.
 tls.redirection = true                            # (Optional) If true, automatically redirect HTTP requests to HTTPS. (default: true)
 
+# (Optionnal) Headers at service level (apply to a specific service)
+[services.monservice.headers.locations]
+request.set."Header-To-Set" = "value" # (Optionnal) Add or override a request header before forwarding to backend.
+request.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific request headers from the incoming request.
+response.set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+response.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
+
+# (Optionnal) # Headers applied when serving static files directly from the server.
+[services.monservice.headers.file_servers]
+set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
+
 # Route all incoming traffic to a backend server.
 # At least one location or redirection must be defined for each service.
 [[services.your_service_name.locations]]
-source = "/*"                       # Match all incoming requests under the root path.
+source = "/*" # Match all incoming requests under the root path.
 target = "http://192.168.0.10:8888" # Forward matched requests to this backend server.
+headers.request.set."Header-To-Set" = "value" # (Optional) Add or override a request header before forwarding to backend.
+headers.request.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific request headers from the incoming request.
+headers.response.set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
+headers.response.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
 
 # Serve static files for a specific route using the file server mode.
 [[services.your_service_name.file_servers]]
-source = "/static/*"           # Match all requests starting with /static/.
+source = "/static/*" # Match all requests starting with /static/.
 target = "/path/to/your/files" # Serve files from this local directory.
+headers.set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
+headers.del = [
+  "Header-To-Delete",
+] # (Optional) Remove specific response headers from the outgoing response.
 
 # Serve static website.
 [[services.your_service_name.file_servers]]
