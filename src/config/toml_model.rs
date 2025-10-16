@@ -33,6 +33,7 @@ pub struct Server {
     pub port: Option<u16>,
     pub https_port: Option<u16>,
     pub proxy_timeout: Option<u64>,
+    pub headers: Option<Headers>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -140,20 +140,22 @@ impl ServiceConfig {
         let mut servers: HashMap<String, Server> = HashMap::new();
 
         // Declare all servers defined in the config.
-        for (name, server) in &config.servers.unwrap_or_default() {
-            let port = server.port.unwrap_or(DEFAULT_PORT);
-            let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
-            let server = Server {
-                params: ServerParams {
-                    targets: BTreeMap::new(),
-                    auto_tls: None,
-                    proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
-                },
-                port,
-                https_port,
-                tls: None,
-            };
-            servers.insert(name.clone(), server);
+        if let Some(server_map) = &config.servers {
+            for (name, server) in server_map {
+                let port = server.port.unwrap_or(DEFAULT_PORT);
+                let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
+                let server = Server {
+                    params: ServerParams {
+                        targets: BTreeMap::new(),
+                        auto_tls: None,
+                        proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
+                    },
+                    port,
+                    https_port,
+                    tls: None,
+                };
+                servers.insert(name.clone(), server);
+            }
         }
 
         // Declare the main server if not declared.
@@ -198,7 +200,18 @@ impl ServiceConfig {
                 tls_redirection = tls.redirection.unwrap_or(DEFAULT_TLS_REDIRECTION);
             }
 
-            manage_locations_and_redirections(server, service, &config.loadbalancers);
+            let server_headers = config
+                .servers
+                .as_ref()
+                .and_then(|servers| servers.get(server_name))
+                .and_then(|server| server.headers.as_ref());
+
+            manage_locations_and_redirections(
+                server,
+                service,
+                &config.loadbalancers,
+                server_headers,
+            );
             www_auto_redirection(
                 server,
                 service,
@@ -304,15 +317,30 @@ fn manage_locations_and_redirections(
     server: &mut Server,
     service: &toml_model::Service,
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
+    server_headers: Option<&Headers>,
 ) {
     // Manage headers
-    let (l_headers, fs_headers) = manage_headers(&service.headers);
+    let (l_headers, fs_headers) = manage_headers(server_headers);
     // Locations
     if let Some(locations) = &service.locations {
         // Manage locations.
         for location in locations {
             // Custom headers for this specific location.
             let mut headers = l_headers.clone();
+
+            if let Some(service_header) = &service.headers {
+                if let Some(lh) = &service_header.locations {
+                    // Request headers.
+                    if let Some(l_req) = &lh.request {
+                        merge_headers_actions(l_req, &mut headers.request);
+                    }
+                    // Response headers.
+                    if let Some(l_res) = &lh.response {
+                        merge_headers_actions(l_res, &mut headers.response);
+                    }
+                }
+            }
+
             if let Some(lh) = &location.headers {
                 // Request headers.
                 if let Some(l_req) = &lh.request {
@@ -378,7 +406,7 @@ fn manage_locations_and_redirections(
 }
 
 fn manage_headers(
-    headers: &Option<Headers>,
+    headers: Option<&Headers>,
 ) -> (
     ConfigHeaders, // Location
     ConfigHeaders, // FileServer
