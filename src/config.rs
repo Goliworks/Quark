@@ -206,12 +206,7 @@ impl ServiceConfig {
                 .and_then(|servers| servers.get(server_name))
                 .and_then(|server| server.headers.as_ref());
 
-            manage_locations_and_redirections(
-                server,
-                service,
-                &config.loadbalancers,
-                server_headers,
-            );
+            manage_server_targets(server, service, &config.loadbalancers, server_headers);
             www_auto_redirection(
                 server,
                 service,
@@ -313,7 +308,7 @@ fn import_sub_toml_config(path: &str, dir: &str) -> SubConfigToml {
     config
 }
 
-fn manage_locations_and_redirections(
+fn manage_server_targets(
     server: &mut Server,
     service: &toml_model::Service,
     loadbalancers: &Option<HashMap<String, toml_model::Loadbalancer>>,
@@ -377,6 +372,7 @@ fn manage_locations_and_redirections(
                 service.domain.clone(),
                 &mut server.params.targets,
                 &fs_headers,
+                service.headers.as_ref(),
             );
         }
     }
@@ -467,6 +463,7 @@ fn manage_file_servers(
     domain: String,
     targets: &mut ServerParamsTargets,
     headers: &ConfigHeaders,
+    service_headers: Option<&Headers>,
 ) {
     let (source, strict_mode) = source_and_strict_mode(&fs.source);
     let (target, file_name) = get_path_and_file(&fs.target);
@@ -484,6 +481,13 @@ fn manage_file_servers(
 
     // Custom headers for this specific file server.
     let mut headers = headers.clone();
+
+    if let Some(service_header) = service_headers {
+        if let Some(fsh) = &service_header.file_servers {
+            merge_headers_actions(fsh, &mut headers.response);
+        }
+    }
+
     if let Some(ha) = &fs.headers {
         merge_headers_actions(ha, &mut headers.response);
     }
