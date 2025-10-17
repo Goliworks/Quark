@@ -11,7 +11,7 @@ use std::{
 use toml_model::{ConfigToml, SubConfigToml};
 
 use crate::{
-    config::toml_model::{FileServers, HeaderAction, Headers},
+    config::toml_model::{FileServers, Headers},
     utils::{self, extract_vars_from_string, generate_u32_id, get_path_and_file},
 };
 
@@ -315,7 +315,7 @@ fn manage_server_targets(
     server_headers: Option<&Headers>,
 ) {
     // Manage headers
-    let (l_headers, fs_headers) = manage_headers(server_headers);
+    let (l_headers, fs_headers) = headers::get_config_headers_from(server_headers);
     // Locations
     if let Some(locations) = &service.locations {
         // Manage locations.
@@ -327,11 +327,11 @@ fn manage_server_targets(
                 if let Some(lh) = &service_header.locations {
                     // Request headers.
                     if let Some(l_req) = &lh.request {
-                        merge_headers_actions(l_req, &mut headers.request);
+                        headers::merge_headers_actions(l_req, &mut headers.request);
                     }
                     // Response headers.
                     if let Some(l_res) = &lh.response {
-                        merge_headers_actions(l_res, &mut headers.response);
+                        headers::merge_headers_actions(l_res, &mut headers.response);
                     }
                 }
             }
@@ -339,11 +339,11 @@ fn manage_server_targets(
             if let Some(lh) = &location.headers {
                 // Request headers.
                 if let Some(l_req) = &lh.request {
-                    merge_headers_actions(l_req, &mut headers.request);
+                    headers::merge_headers_actions(l_req, &mut headers.request);
                 }
                 // Response headers.
                 if let Some(l_res) = &lh.response {
-                    merge_headers_actions(l_res, &mut headers.response);
+                    headers::merge_headers_actions(l_res, &mut headers.response);
                 }
             }
             // Remove last slash.
@@ -401,63 +401,6 @@ fn manage_server_targets(
     }
 }
 
-fn manage_headers(
-    headers: Option<&Headers>,
-) -> (
-    ConfigHeaders, // Location
-    ConfigHeaders, // FileServer
-) {
-    let mut l_headers = ConfigHeaders::default();
-    let mut fs_headers = ConfigHeaders::default();
-    if let Some(h) = headers {
-        if let Some(locations) = &h.locations {
-            if let Some(request) = &locations.request {
-                l_headers.request = Some(process_headers_set_del(request));
-            }
-            if let Some(response) = &locations.response {
-                l_headers.response = Some(process_headers_set_del(response));
-            }
-        }
-        if let Some(response) = &h.file_servers {
-            fs_headers.response = Some(process_headers_set_del(response));
-        }
-    }
-
-    (l_headers, fs_headers)
-}
-
-fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {
-    let mut config_action = ConfigHeadersActions::default();
-    if let Some(set) = &action.set {
-        config_action.set = Some(set.clone());
-    }
-    if let Some(del) = &action.del {
-        config_action.del = Some(del.clone());
-    }
-    config_action
-}
-
-fn merge_headers_actions(ha: &HeaderAction, cha: &mut Option<ConfigHeadersActions>) {
-    let actions = process_headers_set_del(ha);
-    let target = cha.get_or_insert_default();
-
-    merge_option_collections(&mut target.set, actions.set);
-    merge_option_collections(&mut target.del, actions.del);
-}
-
-fn merge_option_collections<T>(target: &mut Option<T>, source: Option<T>)
-where
-    T: Extend<T::Item> + IntoIterator,
-{
-    match (target.as_mut(), source) {
-        (Some(t), Some(s)) => {
-            t.extend(s);
-        }
-        (None, Some(s)) => *target = Some(s),
-        _ => (),
-    }
-}
-
 fn manage_file_servers(
     fs: &FileServers,
     domain: String,
@@ -484,12 +427,12 @@ fn manage_file_servers(
 
     if let Some(service_header) = service_headers {
         if let Some(fsh) = &service_header.file_servers {
-            merge_headers_actions(fsh, &mut headers.response);
+            headers::merge_headers_actions(fsh, &mut headers.response);
         }
     }
 
     if let Some(ha) = &fs.headers {
-        merge_headers_actions(ha, &mut headers.response);
+        headers::merge_headers_actions(ha, &mut headers.response);
     }
 
     targets.insert(
@@ -637,8 +580,74 @@ fn source_and_strict_mode(source: &str) -> (&str, bool) {
     }
 }
 
+mod headers {
+    use crate::config::{
+        toml_model::{HeaderAction, Headers},
+        ConfigHeaders, ConfigHeadersActions,
+    };
+
+    pub fn get_config_headers_from(
+        headers: Option<&Headers>,
+    ) -> (
+        ConfigHeaders, // Location
+        ConfigHeaders, // FileServer
+    ) {
+        let mut l_headers = ConfigHeaders::default();
+        let mut fs_headers = ConfigHeaders::default();
+        if let Some(h) = headers {
+            if let Some(locations) = &h.locations {
+                if let Some(request) = &locations.request {
+                    l_headers.request = Some(process_headers_set_del(request));
+                }
+                if let Some(response) = &locations.response {
+                    l_headers.response = Some(process_headers_set_del(response));
+                }
+            }
+            if let Some(response) = &h.file_servers {
+                fs_headers.response = Some(process_headers_set_del(response));
+            }
+        }
+
+        (l_headers, fs_headers)
+    }
+
+    fn process_headers_set_del(action: &HeaderAction) -> ConfigHeadersActions {
+        let mut config_action = ConfigHeadersActions::default();
+        if let Some(set) = &action.set {
+            config_action.set = Some(set.clone());
+        }
+        if let Some(del) = &action.del {
+            config_action.del = Some(del.clone());
+        }
+        config_action
+    }
+
+    pub fn merge_headers_actions(ha: &HeaderAction, cha: &mut Option<ConfigHeadersActions>) {
+        let actions = process_headers_set_del(ha);
+        let target = cha.get_or_insert_default();
+
+        merge_option_collections(&mut target.set, actions.set);
+        merge_option_collections(&mut target.del, actions.del);
+    }
+
+    fn merge_option_collections<T>(target: &mut Option<T>, source: Option<T>)
+    where
+        T: Extend<T::Item> + IntoIterator,
+    {
+        match (target.as_mut(), source) {
+            (Some(t), Some(s)) => {
+                t.extend(s);
+            }
+            (None, Some(s)) => *target = Some(s),
+            _ => (),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::config::toml_model::HeaderAction;
+
     use super::*;
 
     fn header_action_mock() -> HeaderAction {
@@ -661,7 +670,7 @@ mod tests {
             ])),
             del: Some(vec!["del3".to_string()]),
         });
-        merge_headers_actions(&ha, &mut cha);
+        headers::merge_headers_actions(&ha, &mut cha);
         cha.as_mut().unwrap().del.as_mut().unwrap().sort();
         let expected = Some(ConfigHeadersActions {
             set: Some(HashMap::from([
@@ -682,7 +691,7 @@ mod tests {
     fn test_merge_headers_actions_ha_empty() {
         let ha = header_action_mock();
         let mut cha = None;
-        merge_headers_actions(&ha, &mut cha);
+        headers::merge_headers_actions(&ha, &mut cha);
         let expected = Some(ConfigHeadersActions {
             set: Some(HashMap::from([
                 ("set1".to_string(), "ha1".to_string()),
@@ -706,7 +715,7 @@ mod tests {
             ])),
             del: Some(vec!["del1".to_string()]),
         });
-        merge_headers_actions(&ha, &mut cha);
+        headers::merge_headers_actions(&ha, &mut cha);
         let expected = Some(ConfigHeadersActions {
             set: Some(HashMap::from([
                 ("set1".to_string(), "cha1".to_string()),
