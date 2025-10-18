@@ -302,8 +302,9 @@ fn import_sub_toml_config(path: &str, dir: &str) -> SubConfigToml {
     };
     let real_path = real_path.to_str().unwrap();
     let toml_str = fs::read_to_string(real_path).unwrap();
-    let config: SubConfigToml = toml::from_str(&toml_str).unwrap_or_else(|_| {
-        panic!("Failed to parse toml file.\nInvalid configuration file.");
+    let config: SubConfigToml = toml::from_str(&toml_str).unwrap_or_else(|e| {
+        eprintln!("Failed to parse toml file.\nInvalid configuration file.\n{e}");
+        std::process::exit(1);
     });
     config
 }
@@ -323,35 +324,18 @@ fn manage_server_targets(
             // Custom headers for this specific location.
             let mut headers = l_headers.clone();
 
-            if let Some(service_header) = &service.headers {
-                if let Some(lh) = &service_header.locations {
-                    // Request headers.
-                    if let Some(l_req) = &lh.request {
-                        headers::merge_headers_actions(l_req, &mut headers.request);
-                    }
-                    // Response headers.
-                    if let Some(l_res) = &lh.response {
-                        headers::merge_headers_actions(l_res, &mut headers.response);
-                    }
-                }
-            }
+            headers::apply_header_actions(
+                service.headers.as_ref().and_then(|h| h.locations.as_ref()),
+                &mut headers,
+            );
+            headers::apply_header_actions(location.headers.as_ref(), &mut headers);
 
-            if let Some(lh) = &location.headers {
-                // Request headers.
-                if let Some(l_req) = &lh.request {
-                    headers::merge_headers_actions(l_req, &mut headers.request);
-                }
-                // Response headers.
-                if let Some(l_res) = &lh.response {
-                    headers::merge_headers_actions(l_res, &mut headers.response);
-                }
-            }
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&location.source);
             // Get all backends info required for load balancing.
             let (backends, algo, weight) = get_backends_config(&location.target, loadbalancers);
             server.params.targets.insert(
-                format!("{}{}", service.domain.clone(), source),
+                format!("{}{}", service.domain, source),
                 TargetType::Location(Locations {
                     id: generate_u32_id(),
                     params: TargetParams {
@@ -383,7 +367,7 @@ fn manage_server_targets(
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&red.source);
             server.params.targets.insert(
-                format!("{}{}", service.domain.clone(), source),
+                format!("{}{}", service.domain, source),
                 TargetType::Redirection(Redirection {
                     params: TargetParams {
                         location: red.target.clone(),
@@ -456,7 +440,7 @@ fn manage_file_servers(
                 format!("{}{}{}", domain, source, dir),
                 TargetType::FileServer(FileServer {
                     params: TargetParams {
-                        location: format!("{}{}", target_str.clone(), dir),
+                        location: format!("{}{}", target_str, dir),
                         strict_uri: strict_mode,
                         headers: headers.clone(),
                     },
@@ -582,7 +566,7 @@ fn source_and_strict_mode(source: &str) -> (&str, bool) {
 
 mod headers {
     use crate::config::{
-        toml_model::{HeaderAction, Headers},
+        toml_model::{HeaderAction, HeaderType, Headers},
         ConfigHeaders, ConfigHeadersActions,
     };
 
@@ -620,6 +604,22 @@ mod headers {
             config_action.del = Some(del.clone());
         }
         config_action
+    }
+
+    pub fn apply_header_actions(
+        header_type: Option<&HeaderType>,
+        config_headers: &mut ConfigHeaders,
+    ) {
+        if let Some(ht) = header_type {
+            // Request headers.
+            if let Some(req) = &ht.request {
+                merge_headers_actions(req, &mut config_headers.request);
+            }
+            // Response headers.
+            if let Some(res) = &ht.response {
+                merge_headers_actions(res, &mut config_headers.response);
+            }
+        }
     }
 
     pub fn merge_headers_actions(ha: &HeaderAction, cha: &mut Option<ConfigHeadersActions>) {
