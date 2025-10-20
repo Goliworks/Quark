@@ -99,15 +99,20 @@ async fn display_directory_content(
 ) -> Response<ProxyHandlerBody> {
     file_path.pop(); // Remove index.html
     let mut dir = tokio::fs::read_dir(file_path).await.unwrap();
+    let title = if current_path.is_empty() {
+        "/"
+    } else {
+        current_path
+    };
     let mut html = vec![format!(
         "<html><head><meta charset=\"UTF-8\">\
-        <title>Index of {current_path}</title>\
+        <title>Index of {title}</title>\
         <style>table {{border-collapse: collapse;}}\
         tr {{border-bottom: 1px solid #cfcfcf;}}
         th, td {{padding: 6px 0;}}
         p {{margin-top: 20px; color: grey;}}</style></head>\
         <body style=\"margin-top: 25px; font-family: sans-serif;\">\
-        <h1>Index of {current_path}/</h1><hr/>\
+        <h1>Index of {title}</h1><hr/>\
         <table style=\"width:100%; text-align: left; table-layout: fixed;\">\
         <tr><th>Name</th><th>Last modified</th><th>Size</th></tr>",
     )];
