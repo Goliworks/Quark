@@ -90,6 +90,10 @@ headers.set."Header-To-Set" = "value" # (Optional) Add or override a response he
 headers.del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific response headers from the outgoing response.
+authorized_dirs = [ # (Optional) List of directories that are allowed to be accessed.
+  "/*",                  # Allow all requests under the root path.
+  "!/still/forbidden/*", # Deny all requests under the /still/forbidden/ path.
+]
 
 # Serve static website.
 [[services.your_service_name.file_servers]]
