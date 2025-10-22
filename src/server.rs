@@ -6,11 +6,13 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr};
 use std::pin::Pin;
+use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
 use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioTimer;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
@@ -73,7 +75,26 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // List of servers to start.
     let mut servers: Vec<Pin<Box<dyn Future<Output = ()> + Send>>> = Vec::new();
 
-    let http = Arc::new(Builder::new(TokioExecutor::new()));
+    let mut http_builder = Builder::new(TokioExecutor::new());
+
+    http_builder
+        .http1()
+        .keep_alive(service_config.global.keepalive)
+        .timer(TokioTimer::new());
+
+    http_builder
+        .http2()
+        .keep_alive_interval(if service_config.global.keepalive {
+            Some(Duration::from_secs(
+                service_config.global.keepalive_interval,
+            ))
+        } else {
+            None
+        })
+        .keep_alive_timeout(Duration::from_secs(service_config.global.keepalive_timeout))
+        .timer(TokioTimer::new());
+
+    let http = Arc::new(http_builder);
     let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));

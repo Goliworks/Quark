@@ -9,9 +9,12 @@ import = [
 # Note : Only services and load balancers can be configured in an external files.
 
 [global] # (Optional) Global configuration for the server.
-backlog = 4096        # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
-max_connection = 1024 # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
-max_request = 100     # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
+backlog = 4096          # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
+max_connection = 1024   # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
+max_request = 100       # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
+keepalive = true        # (Optional) Enable HTTP keep-alive. (default: true)
+keepalive_timeout = 60  # (Optional) Timeout in seconds for HTTP keep-alive connections. (default: 60s)
+keepalive_interval = 20 # (Optional) Interval in seconds between HTTP keep-alive probes. (default: 20s)
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
@@ -119,7 +122,6 @@ algo = "round_robin" # (Optional) Load balancing algorithm. (default: "round_rob
 backends = ["172.16.0.10", "172.16.0.20", "172.16.0.40", "172.16.0.50"]
 # (Optional) Server weights for weighted round robin (must match server count).
 weights = [5, 3, 3, 1]
-
 
 # Use the load balancer for a specific route.
 [[services.your_service_name.locations]]

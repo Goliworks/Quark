@@ -24,6 +24,9 @@ const DEFAULT_REDIRECTION_CODE: u16 = 301; // Permanent.
 const DEFAULT_BACKLOG: i32 = 4096;
 const DEFAULT_MAX_CONNECTIONS: usize = 1024;
 const DEFAULT_MAX_REQUESTS: usize = 100;
+const DEFAULT_KEEPALIVE: bool = true;
+const DEFAULT_KEEPALIVE_TIMEOUT: u64 = 60;
+const DEFAULT_KEEPALIVE_INTERVAL: u64 = 20;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
@@ -41,6 +44,9 @@ pub struct Global {
     pub backlog: i32,
     pub max_conn: usize,
     pub max_req: usize,
+    pub keepalive: bool,
+    pub keepalive_timeout: u64,
+    pub keepalive_interval: u64,
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -252,6 +258,21 @@ impl ServiceConfig {
                 .as_ref()
                 .and_then(|g| g.max_requests)
                 .unwrap_or(DEFAULT_MAX_REQUESTS),
+            keepalive: config
+                .global
+                .as_ref()
+                .and_then(|g| g.keepalive)
+                .unwrap_or(DEFAULT_KEEPALIVE),
+            keepalive_timeout: config
+                .global
+                .as_ref()
+                .and_then(|g| g.keepalive_timeout)
+                .unwrap_or(DEFAULT_KEEPALIVE_TIMEOUT),
+            keepalive_interval: config
+                .global
+                .as_ref()
+                .and_then(|g| g.keepalive_interval)
+                .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL),
         };
 
         ServiceConfig {

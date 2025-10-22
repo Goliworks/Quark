@@ -26,6 +26,9 @@ pub struct Global {
     pub backlog: Option<i32>,
     pub max_connections: Option<usize>,
     pub max_requests: Option<usize>,
+    pub keepalive: Option<bool>,
+    pub keepalive_timeout: Option<u64>,
+    pub keepalive_interval: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
