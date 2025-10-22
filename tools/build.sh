@@ -2,15 +2,42 @@
 set -e
 
 TMP_PACKAGE_DIR="tmp_package"
-TARGET_PARAM="$1" #arm64 or nothing (default x86_64)
-TARGET="x86_64-unknown-linux-gnu"
-PACKAGE_SUFFIX="x86_64-linux"
-RELEASE_PATH="target/$TARGET/release"
+DEFAULT_TARGET="x86_64"  # or aarch64
+DEFAULT_LIBC="gnu"       # or musl
+DEFAULT_COMPILER="cargo" # or cross
 BIN_NAME="quark"
 CURRENT_DIR=$(pwd)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+USAGE_EXAMPLE="Usage : $0 [--target=x86_64|aarch64] [--libc=gnu|musl] [--compiler=cargo|cross]"
 
 cd "$SCRIPT_DIR/.." || exit 1
+
+target=$DEFAULT_TARGET
+libc=$DEFAULT_LIBC
+compiler=$DEFAULT_COMPILER
+
+# Parse arguments
+for arg in "$@"; do
+  case "$arg" in
+  --target=*)
+    target="${arg#*=}"
+    ;;
+  --libc=*)
+    libc="${arg#*=}"
+    ;;
+  --compiler=*)
+    compiler="${arg#*=}"
+    ;;
+  *)
+    echo "Unrecognized argument : $arg"
+    echo "$USAGE_EXAMPLE"
+    exit 1
+    ;;
+  esac
+done
+
+FULL_TARGET="$target-unknown-linux-$libc" # example : x86_64-unknown-linux-gnu
+RELEASE_PATH="target/$FULL_TARGET/release"
 
 # Get version from Cargo.toml
 VERSION=$(awk '
@@ -23,16 +50,12 @@ VERSION=$(awk '
   }
 ' Cargo.toml)
 
-# Set the target system from the parameter.
-if [ "$TARGET_PARAM" = "arm64" ]; then
-  TARGET="aarch64-unknown-linux-gnu"
-  PACKAGE_SUFFIX="arm64-linux"
-fi
+PACKAGE_SUFFIX="$target-linux"
 
 # Build Quark with cargo.
 printf "\e[33mBuilding Quark\e[0m\n"
-echo "Target: $TARGET"
-cargo build --release --target "$TARGET"
+echo "Target: $FULL_TARGET"
+"$compiler" build --release --target "$FULL_TARGET"
 
 if [ $? -eq 0 ]; then
   printf "\e[32mQuark built successfully\e[0m\n"
@@ -45,7 +68,7 @@ PACKAGE_NAME="$BIN_NAME-$VERSION-$PACKAGE_SUFFIX"
 TMP_PACKAGE_PATH="$TMP_PACKAGE_DIR/$PACKAGE_NAME"
 
 # Create a temporary directory for the package.
-RELEASE_PATH="target/$TARGET/release"
+RELEASE_PATH="target/$FULL_TARGET/release"
 if [ -f "$RELEASE_PATH/quark" ]; then
   echo "Creating temporary directory $TMP_PACKAGE_DIR"
   mkdir -p "$TMP_PACKAGE_DIR/$PACKAGE_NAME"
