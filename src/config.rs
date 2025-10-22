@@ -242,35 +242,24 @@ impl ServiceConfig {
             }
         }
 
+        let global_config = config.global.as_ref();
         let global = Global {
-            backlog: config
-                .global
-                .as_ref()
+            backlog: global_config
                 .and_then(|g| g.backlog)
                 .unwrap_or(DEFAULT_BACKLOG),
-            max_conn: config
-                .global
-                .as_ref()
+            max_conn: global_config
                 .and_then(|g| g.max_connections)
                 .unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            max_req: config
-                .global
-                .as_ref()
+            max_req: global_config
                 .and_then(|g| g.max_requests)
                 .unwrap_or(DEFAULT_MAX_REQUESTS),
-            keepalive: config
-                .global
-                .as_ref()
+            keepalive: global_config
                 .and_then(|g| g.keepalive)
                 .unwrap_or(DEFAULT_KEEPALIVE),
-            keepalive_timeout: config
-                .global
-                .as_ref()
+            keepalive_timeout: global_config
                 .and_then(|g| g.keepalive_timeout)
                 .unwrap_or(DEFAULT_KEEPALIVE_TIMEOUT),
-            keepalive_interval: config
-                .global
-                .as_ref()
+            keepalive_interval: global_config
                 .and_then(|g| g.keepalive_interval)
                 .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL),
         };
