@@ -102,7 +102,6 @@ mod tests {
             id: 0,
             params: TargetParams {
                 location: vec!["a".to_string(), "b".to_string(), "c".to_string()],
-                strict_uri: false,
                 headers: ConfigHeaders::default(),
             },
             algo: Some("round_robin".to_string()),

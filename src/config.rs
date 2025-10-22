@@ -57,11 +57,13 @@ pub struct Server {
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
+// Domain -> Location
 type ServerParamsTargets = BTreeMap<String, TargetType>;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct ServerParams {
-    pub targets: ServerParamsTargets, // Domain -> Location
+    pub targets: ServerParamsTargets,
+    pub strict_targets: ServerParamsTargets,
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -96,7 +98,6 @@ pub struct Redirection {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TargetParams<T> {
     pub location: T,
-    pub strict_uri: bool, // default false. Used to check if the path must be conserved in the redirection.
     pub headers: ConfigHeaders,
 }
 
@@ -153,6 +154,7 @@ impl ServiceConfig {
                 let server = Server {
                     params: ServerParams {
                         targets: BTreeMap::new(),
+                        strict_targets: BTreeMap::new(),
                         auto_tls: None,
                         proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                     },
@@ -169,6 +171,7 @@ impl ServiceConfig {
             let server = Server {
                 params: ServerParams {
                     targets: BTreeMap::new(),
+                    strict_targets: BTreeMap::new(),
                     auto_tls: None,
                     proxy_timeout: DEFAULT_PROXY_TIMEOUT,
                 },
@@ -344,19 +347,23 @@ fn manage_server_targets(
             let (source, strict_mode) = source_and_strict_mode(&location.source);
             // Get all backends info required for load balancing.
             let (backends, algo, weight) = get_backends_config(&location.target, loadbalancers);
-            server.params.targets.insert(
-                format!("{}{}", service.domain, source),
-                TargetType::Location(Locations {
-                    id: generate_u32_id(),
-                    params: TargetParams {
-                        location: backends,
-                        strict_uri: strict_mode,
-                        headers,
-                    },
-                    algo,
-                    weights: weight,
-                }),
-            );
+
+            let key = format!("{}{}", service.domain, source);
+            let target = TargetType::Location(Locations {
+                id: generate_u32_id(),
+                params: TargetParams {
+                    location: backends,
+                    headers,
+                },
+                algo,
+                weights: weight,
+            });
+
+            if strict_mode {
+                server.params.strict_targets.insert(key, target);
+            } else {
+                server.params.targets.insert(key, target);
+            }
         }
     }
     if let Some(file_server) = &service.file_servers {
@@ -365,6 +372,7 @@ fn manage_server_targets(
                 fs,
                 service.domain.clone(),
                 &mut server.params.targets,
+                &mut server.params.strict_targets,
                 &fs_headers,
                 service.headers.as_ref(),
             );
@@ -376,21 +384,25 @@ fn manage_server_targets(
         for red in redirections {
             // Remove last slash.
             let (source, strict_mode) = source_and_strict_mode(&red.source);
-            server.params.targets.insert(
-                format!("{}{}", service.domain, source),
-                TargetType::Redirection(Redirection {
-                    params: TargetParams {
-                        location: red.target.clone(),
-                        strict_uri: strict_mode,
-                        headers: ConfigHeaders::default(),
-                    },
-                    code: match red.code {
-                        // Available redirection codes.
-                        Some(code @ (301 | 302 | 307 | 308)) => code,
-                        _ => DEFAULT_REDIRECTION_CODE,
-                    },
-                }),
-            );
+
+            let key = format!("{}{}", service.domain, source);
+            let target = TargetType::Redirection(Redirection {
+                params: TargetParams {
+                    location: red.target.clone(),
+                    headers: ConfigHeaders::default(),
+                },
+                code: match red.code {
+                    // Available redirection codes.
+                    Some(code @ (301 | 302 | 307 | 308)) => code,
+                    _ => DEFAULT_REDIRECTION_CODE,
+                },
+            });
+
+            if strict_mode {
+                server.params.strict_targets.insert(key, target);
+            } else {
+                server.params.targets.insert(key, target);
+            }
         }
     }
 }
@@ -399,6 +411,7 @@ fn manage_file_servers(
     fs: &FileServers,
     domain: String,
     targets: &mut ServerParamsTargets,
+    strict_targets: &mut ServerParamsTargets,
     headers: &ConfigHeaders,
     service_headers: Option<&Headers>,
 ) {
@@ -429,36 +442,42 @@ fn manage_file_servers(
         headers::merge_headers_actions(ha, &mut headers.response);
     }
 
-    targets.insert(
-        format!("{}{}", domain, source),
-        TargetType::FileServer(FileServer {
-            params: TargetParams {
-                location: target_str.clone(),
-                strict_uri: strict_mode,
-                headers: headers.clone(),
-            },
-            fallback_file: file_path.clone(),
-            is_fallback_404,
-            forbidden_dir: DEFAULT_FORBIDDEN_DIR,
-        }),
-    );
+    let key = format!("{}{}", domain, source);
+    let target = TargetType::FileServer(FileServer {
+        params: TargetParams {
+            location: target_str.clone(),
+            headers: headers.clone(),
+        },
+        fallback_file: file_path.clone(),
+        is_fallback_404,
+        forbidden_dir: DEFAULT_FORBIDDEN_DIR,
+    });
+
+    if strict_mode {
+        strict_targets.insert(key, target);
+    } else {
+        targets.insert(key, target);
+    }
 
     if let Some(ads) = &fs.authorized_dirs {
         for ad in ads {
             let (dir, strict_mode, access) = dir_strict_mode_and_access(ad);
-            targets.insert(
-                format!("{}{}{}", domain, source, dir),
-                TargetType::FileServer(FileServer {
-                    params: TargetParams {
-                        location: format!("{}{}", target_str, dir),
-                        strict_uri: strict_mode,
-                        headers: headers.clone(),
-                    },
-                    fallback_file: file_path.clone(),
-                    is_fallback_404,
-                    forbidden_dir: access,
-                }),
-            );
+            let key = format!("{}{}{}", domain, source, dir);
+            let target = TargetType::FileServer(FileServer {
+                params: TargetParams {
+                    location: format!("{}{}", target_str, dir),
+                    headers: headers.clone(),
+                },
+                fallback_file: file_path.clone(),
+                is_fallback_404,
+                forbidden_dir: access,
+            });
+
+            if strict_mode {
+                strict_targets.insert(key, target);
+            } else {
+                targets.insert(key, target);
+            }
         }
     }
 }
@@ -547,7 +566,6 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
         TargetType::Redirection(Redirection {
             params: TargetParams {
                 location: target,
-                strict_uri: false,
                 headers: ConfigHeaders::default(),
             },
             code: StatusCode::MOVED_PERMANENTLY.as_u16(),
