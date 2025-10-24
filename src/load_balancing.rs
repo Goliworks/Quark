@@ -48,7 +48,7 @@ impl LoadBalancerConfig {
     }
 
     pub fn balance(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         id: &u32,
         servers: &[String],
         algo: &Option<String>,

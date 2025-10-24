@@ -132,27 +132,26 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     for (_, server) in service_config.servers {
         // Build TCP Socket and Socket Address.
 
-        let server_params = Arc::new(server.params);
-        let lb_config = Arc::clone(&lb_config);
-
         let http = Arc::clone(&http);
         let client = Arc::clone(&client);
         let max_conns = Arc::clone(&max_conns);
         let max_req = Arc::clone(&max_req);
+        let lb_config = Arc::clone(&lb_config);
         let tx = tx.clone();
+
+        let server_params = Arc::new(server.params);
+        let server_handler =
+            handler::ServerHandler::builder(server_params, lb_config, max_req, client);
 
         let tls_certs = Arc::clone(&tls_certs).clone();
 
         // Declare https server if tls is enabled in the server config.
         if let Some(_tls) = &server.tls {
             // Clone arcs for the next asynvc task.
-            let server_params = Arc::clone(&server_params);
-            let lb_config = Arc::clone(&lb_config);
 
             let http = Arc::clone(&http);
-            let client = Arc::clone(&client);
             let max_conns = Arc::clone(&max_conns);
-            let max_req = Arc::clone(&max_req);
+            let server_handler = Arc::clone(&server_handler);
 
             let port = server.https_port;
             let listener = create_listener(port, default_backlog);
@@ -205,23 +204,14 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
                     let client_ip = format_ip(address.ip());
                     let acceptor = tls_acceptor.clone();
-                    let client = Arc::clone(&client);
-                    let server_params = Arc::clone(&server_params);
-                    let lb_config = Arc::clone(&lb_config);
-                    let max_req = Arc::clone(&max_req);
                     let max_conns = Arc::clone(&max_conns);
+                    let server_handler = Arc::clone(&server_handler);
 
                     // This service will handle the connection.
                     let service = service_fn(move |req| {
-                        handler::handler(
-                            req,
-                            server_params.clone(),
-                            lb_config.clone(),
-                            max_req.clone(),
-                            client.clone(),
-                            client_ip.clone(),
-                            "https",
-                        )
+                        let server_handler = Arc::clone(&server_handler);
+                        let client_ip = client_ip.clone();
+                        async move { server_handler.handle(req, client_ip, "https").await }
                     });
 
                     let http = http.clone();
@@ -265,24 +255,15 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                let server_params = Arc::clone(&server_params);
-                let lb_config = Arc::clone(&lb_config);
                 let client_ip = format_ip(address.ip());
-                let max_req = Arc::clone(&max_req);
                 let max_conns = Arc::clone(&max_conns);
-                let client = Arc::clone(&client);
+                let server_handler = Arc::clone(&server_handler);
 
                 // This service will handle the connection.
                 let service = service_fn(move |req| {
-                    handler::handler(
-                        req,
-                        server_params.clone(),
-                        lb_config.clone(),
-                        max_req.clone(),
-                        client.clone(),
-                        client_ip.clone(),
-                        "http",
-                    )
+                    let server_handler = Arc::clone(&server_handler);
+                    let client_ip = client_ip.clone();
+                    async move { server_handler.handle(req, client_ip, "http").await }
                 });
                 let http = http.clone();
                 tokio::task::spawn(async move {
