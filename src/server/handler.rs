@@ -96,7 +96,11 @@ impl ServerHandler {
         let match_url = format!("{domain}{path}");
 
         // First, check for a strict targets.
-        if let Some(target_type) = &self.params.strict_targets.get(&match_url) {
+        if let Some(target_type) = &self
+            .params
+            .strict_targets
+            .get(utils::remove_last_slash(&match_url))
+        {
             return self
                 .strict_match(target_type, req, authority, scheme, source_url, client_ip)
                 .await;
