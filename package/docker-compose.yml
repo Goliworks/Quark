@@ -1,0 +1,18 @@
+services:
+  quark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["--config", "/etc/quark/${CONFIG_FILE:-config.toml}"]
+    container_name: quark
+    restart: on-failure:3
+
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+
+    volumes:
+      - "${CONFIG_PATH:-/etc/quark}:/etc/quark:ro"
+      - "${LOGS_PATH:-/var/log/quark}:/var/log/quark"
+      - "${STATIC_PATH:-/var/www}:/quark/static:ro"
+      - "${TLS_PATH:-/etc/ssl}:/etc/ssl:ro"
