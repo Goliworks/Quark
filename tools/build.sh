@@ -3,12 +3,12 @@ set -e
 
 TMP_PACKAGE_DIR="tmp_package"
 DEFAULT_TARGET="x86_64"  # or aarch64
-DEFAULT_LIBC="gnu"       # or musl
+DEFAULT_LIBC="musl"      # or gnu
 DEFAULT_COMPILER="cargo" # or cross
 BIN_NAME="quark"
 CURRENT_DIR=$(pwd)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-USAGE_EXAMPLE="Usage : $0 [--target=x86_64|aarch64] [--libc=gnu|musl] [--compiler=cargo|cross]"
+USAGE_EXAMPLE="Usage : $0 [--target=x86_64|aarch64] [--libc=musl|gnu] [--compiler=cargo|cross]"
 
 cd "$SCRIPT_DIR/.." || exit 1
 

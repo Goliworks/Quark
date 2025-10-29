@@ -15,7 +15,7 @@ A fast reverse proxy written in Rust.
 - Native IPv6 support (alongside IPv4) thanks to dual-stack sockets.
 - HTTP/2 by default for HTTPS connections.
 - Load balancing with support for Round Robin, Weighted Round Robin, and IP Hash algorithms.
-- Simple capabilities for serving static files.
+- Full static content serving capabilities for files, static websites, and single-page applications.
 
 ## Installation and configuration
 
@@ -56,6 +56,31 @@ It will start a server on `:80` and `:443` ports.
 
 > [!WARNING]
 > Quark is still in early development. The `.toml` config options might change in future releases, so if you’re using the server as-is, keep an eye on the README and example config in upcoming versions to catch any breaking changes.
+
+## Docker deployment
+
+The latest release includes minimal Docker configuration files for containerized deployment. You are free to adapt them to your needs or use them as is.
+
+### Quick start
+
+```bash
+# With inline variables
+HTTP_PORT=8080 HTTPS_PORT=8443 CONFIG_PATH=/etc/quark LOGS_PATH=/var/log/quark docker compose up -d
+
+# With a custom .env file
+docker compose --env-file .env.custom up -d
+```
+
+### Environment variables
+
+- `HTTP_PORT` / `HTTPS_PORT` - Port mappings (default: 8080/8443)
+- `CONFIG_PATH` - Configuration directory (default: /etc/quark)
+- `CONFIG_FILE` - Config filename (default: config.toml)
+- `LOGS_PATH` - Logs directory (default: /var/log/quark)
+- `STATIC_PATH` - Static files directory (default: /var/www)
+- `TLS_PATH` - TLS certificates directory (default: /etc/ssl)
+
+Logs are available in your mounted `LOGS_PATH` directory.
 
 ## Minimum Supported Rust Version
 
