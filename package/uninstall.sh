@@ -27,7 +27,7 @@ if [ -f "$BINARY_PATH" ]; then
   rm "$BINARY_PATH"
 fi
 
-# Remove configufation
+# Remove configuration
 while true; do
   read -p "Do you want to remove the configuration directory? (y/n) : " yn
   case $yn in

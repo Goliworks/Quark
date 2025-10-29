@@ -285,7 +285,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
         servers.push(Box::pin(http_service));
     }
 
-    // Drop privileges from root to www-data.
+    // Drop privileges from root to quark user.
     // If we are not root, it wont do anything.
     match drop_privileges(QUARK_USER_AND_GROUP) {
         Ok(msg) => tracing::warn!("{}", msg),
