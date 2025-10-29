@@ -43,7 +43,7 @@ impl ServerHandler {
     name = "Handler",
     fields(ip = %client_ip),
     skip(self, req, client_ip, scheme)
-)]
+    )]
     pub async fn handle(
         &self,
         req: Request<Incoming>,
@@ -194,6 +194,7 @@ impl ServerHandler {
             }
         }
     }
+
     async fn strict_match(
         &self,
         target_type: &TargetType,

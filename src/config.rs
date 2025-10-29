@@ -277,7 +277,10 @@ impl ServiceConfig {
 
 fn get_toml_config(path: String) -> ConfigToml {
     println!("Loading config from {path}");
-    let toml_str = fs::read_to_string(&path).unwrap();
+    let toml_str = fs::read_to_string(&path).unwrap_or_else(|e| {
+        eprintln!("Failed to open toml file. {path} \n{e}");
+        std::process::exit(1);
+    });
     let mut config: ConfigToml = toml::from_str(&toml_str).unwrap_or_else(|e| {
         eprintln!("Failed to parse toml file.\nInvalid configuration file.\n{e}");
         std::process::exit(1);
@@ -314,7 +317,10 @@ fn import_sub_toml_config(path: &str, dir: &str) -> SubConfigToml {
         PathBuf::from(path)
     };
     let real_path = real_path.to_str().unwrap();
-    let toml_str = fs::read_to_string(real_path).unwrap();
+    let toml_str = fs::read_to_string(real_path).unwrap_or_else(|e| {
+        eprintln!("Failed to open toml file. {real_path} \n{e}");
+        std::process::exit(1);
+    });
     let config: SubConfigToml = toml::from_str(&toml_str).unwrap_or_else(|e| {
         eprintln!("Failed to parse toml file.\nInvalid configuration file.\n{e}");
         std::process::exit(1);
