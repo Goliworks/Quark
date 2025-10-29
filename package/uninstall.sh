@@ -19,6 +19,7 @@ if systemctl status "$SERVICE_NAME.service" >/dev/null 2>&1; then
   systemctl disable "$SERVICE_NAME"
   rm "/etc/systemd/system/$SERVICE_NAME.service"
   systemctl daemon-reload
+  systemctl reset-failed "$SERVICE_NAME"
 fi
 
 # Remove binary
