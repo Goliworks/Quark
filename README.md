@@ -6,7 +6,7 @@
 
 <hr/>
 
-A fast reverse proxy written in Rust.
+A fast **reverse proxy** and **file server** for Linux written in Rust.
 
 ## Features
 
@@ -81,6 +81,63 @@ docker compose --env-file .env.custom up -d
 - `TLS_PATH` - TLS certificates directory (default: /etc/ssl)
 
 Logs are available in your mounted `LOGS_PATH` directory.
+
+## Build
+
+The project can be built using the conventional Cargo workflow or the provided `build.sh` helper script, which also packages the binary into a `tar.gz` archive.
+
+### Standard Cargo Build
+
+```bash
+cargo build --release
+```
+
+This compiles the project for the host architecture using the default Rust toolchain.
+The resulting binary is placed in `target/release/quark`
+
+### Using the Build Script
+
+A convenience script, `./tools/build.sh`, is provided to compile and package Quark into a `.tar.gz` archive.
+By default, it builds for the **x86_64** architecture using **musl** and the default **cargo** compiler.
+
+You can customize the build process using the following command-line arguments:
+| Argument | Description | Options |
+|--|--|--|
+| `--target` | Target CPU architecture | `x86_64` (default) or `aarch64` |
+| `--libc` | C standard library to link against | `musl` (default) or `gnu` |
+| `--compiler` | Build tool to invoke | `cargo` (default) or `cross` |
+
+#### Examples
+
+Default build for `x86_64` with `musl` using Cargo:
+
+```bash
+./tools/build.sh
+```
+
+Build for ARM64 (`aarch64`) with GNU libc using Cross:
+
+```bash
+./tools/build.sh --target=aarch64 --libc=gnu --compiler=cross
+```
+
+#### Output
+
+After a successful run, the script creates a compressed archive inside a `./dist` directory at the project root.  
+The archive follows the naming convention:
+
+```bash
+quark-<VERSION>-<ARCHITECTURE>-linux.tar.gz
+```
+
+- `<VERSION>` – the version string defined in the project (e.g., `1.2.3`).
+- `<ARCHITECTURE>` – the target architecture you built for (`x86_64` or `aarch64`).
+
+The archive contains:
+
+- The compiled `quark` binary.
+- The example configuration file (`config.example.toml`)
+- Any additional assets required for installation and deployment.
 
 ## Minimum Supported Rust Version
 
