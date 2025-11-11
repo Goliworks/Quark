@@ -49,7 +49,7 @@ pub struct Global {
     pub keepalive_interval: u64,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct Server {
     pub params: ServerParams,
     pub port: u16,
@@ -60,7 +60,7 @@ pub struct Server {
 // Domain -> Location
 type ServerParamsTargets = BTreeMap<String, TargetType>;
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct ServerParams {
     pub targets: ServerParamsTargets,
     pub strict_targets: ServerParamsTargets,
@@ -218,7 +218,7 @@ impl ServiceConfig {
             manage_server_targets(server, service, &config.loadbalancers, server_headers);
             www_auto_redirection(
                 server,
-                service,
+                &service.domain,
                 if service.tls.is_some() {
                     https_port
                 } else {
@@ -538,7 +538,7 @@ fn manage_weights(srv_nbr: usize, weights: &Option<Vec<u32>>) -> Option<Vec<u32>
     }
 }
 
-fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port: u16, tls: bool) {
+fn www_auto_redirection(server: &mut Server, service_domain: &str, port: u16, tls: bool) {
     let domain: String;
     let target_domain: String;
     let default_port = if tls {
@@ -548,13 +548,13 @@ fn www_auto_redirection(server: &mut Server, service: &toml_model::Service, port
     };
     // If the configured domain doesn't start with www, redirect every request
     // that starts with www to the configured domain.
-    if !service.domain.starts_with("www.") {
-        domain = format!("www.{}", service.domain);
-        target_domain = service.domain.clone();
+    if !service_domain.starts_with("www.") {
+        domain = format!("www.{}", service_domain);
+        target_domain = service_domain.to_string();
     // Otherwise, redirect every request that doesn't start with www to www.domain.
     } else {
-        domain = service.domain.strip_prefix("www.").unwrap().to_string();
-        target_domain = service.domain.clone();
+        domain = service_domain.strip_prefix("www.").unwrap().to_string();
+        target_domain = service_domain.to_string();
     }
     let target = format!(
         "http{}://{}{}",
@@ -694,6 +694,41 @@ mod tests {
         }
     }
 
+    fn server_mock() -> Server {
+        Server {
+            params: ServerParams {
+                targets: BTreeMap::new(),
+                strict_targets: BTreeMap::new(),
+                auto_tls: None,
+                proxy_timeout: DEFAULT_PROXY_TIMEOUT,
+            },
+            port: DEFAULT_PORT,
+            https_port: DEFAULT_PORT_HTTPS,
+            tls: None,
+        }
+    }
+
+    fn assert_www_redirection(
+        source_domain: &str,
+        target_domain: &str,
+        expected_url: &str,
+        port: u16,
+        tls: bool,
+    ) {
+        let mut server = server_mock();
+        www_auto_redirection(&mut server, target_domain, port, tls);
+        let target = server.params.targets.get(source_domain).unwrap();
+
+        assert!(
+            matches!(target, TargetType::Redirection(_)),
+            "Expected TargetType::Redirection"
+        );
+
+        if let TargetType::Redirection(url) = target {
+            assert_eq!(url.params.location, expected_url);
+        }
+    }
+
     #[test]
     fn test_merge_headers_actions() {
         let ha = header_action_mock();
@@ -758,5 +793,71 @@ mod tests {
             del: Some(vec!["del1".to_string()]),
         });
         assert_eq!(cha, expected);
+    }
+
+    #[test]
+    fn test_www_subdomain_to_apex_domain_http() {
+        assert_www_redirection(
+            "www.example.com",
+            "example.com",
+            "http://example.com",
+            DEFAULT_PORT,
+            false,
+        );
+    }
+
+    #[test]
+    fn test_www_subdomain_to_apex_domain_https() {
+        assert_www_redirection(
+            "www.example.com",
+            "example.com",
+            "https://example.com",
+            DEFAULT_PORT_HTTPS,
+            true,
+        );
+    }
+
+    #[test]
+    fn test_apex_domain_to_www_subdomain_http() {
+        assert_www_redirection(
+            "example.com",
+            "www.example.com",
+            "http://www.example.com",
+            DEFAULT_PORT,
+            false,
+        );
+    }
+
+    #[test]
+    fn test_apex_domain_to_www_subdomain_https() {
+        assert_www_redirection(
+            "example.com",
+            "www.example.com",
+            "https://www.example.com",
+            DEFAULT_PORT_HTTPS,
+            true,
+        );
+    }
+
+    #[test]
+    fn test_www_subdomain_to_apex_domain_http_with_port() {
+        assert_www_redirection(
+            "www.example.com",
+            "example.com",
+            "http://example.com:8080",
+            8080,
+            false,
+        );
+    }
+
+    #[test]
+    fn test_www_subdomain_to_apex_domain_https_with_port() {
+        assert_www_redirection(
+            "www.example.com",
+            "example.com",
+            "https://example.com:8443",
+            8443,
+            true,
+        );
     }
 }
