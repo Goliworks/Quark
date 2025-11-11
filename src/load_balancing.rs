@@ -121,13 +121,13 @@ mod tests {
     }
 
     #[test]
-    fn test_round_robin() {
+    fn round_robin() {
         let lb = mock_load_balancer(None, 4);
         assert_eq!(lb, vec!["a", "b", "c", "a"]);
     }
 
     #[test]
-    fn test_weighted_round_robin() {
+    fn weighted_round_robin() {
         let lb = mock_load_balancer(Some(vec![4, 2, 1]), 8);
         assert_eq!(lb, vec!["a", "a", "a", "a", "b", "b", "c", "a"]);
     }

@@ -121,13 +121,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_extract_single_var() {
+    fn extract_single_var() {
         let text = "My ${variable}";
         let var = extract_vars_from_string(text);
         assert_eq!(var, ["variable"]);
     }
     #[test]
-    fn test_extract_multiples_var() {
+    fn extract_multiples_var() {
         let text = "${var1} and ${var2} and ${var3}";
         let var = extract_vars_from_string(text);
         assert_eq!(var, ["var1", "var2", "var3"]);

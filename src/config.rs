@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_headers_actions() {
+    fn merge_headers_actions() {
         let ha = header_action_mock();
         let mut cha = Some(ConfigHeadersActions {
             set: Some(HashMap::from([
@@ -757,7 +757,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_headers_actions_ha_empty() {
+    fn merge_headers_actions_ha_empty() {
         let ha = header_action_mock();
         let mut cha = None;
         headers::merge_headers_actions(&ha, &mut cha);
@@ -772,7 +772,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_headers_actions_cha_empty() {
+    fn merge_headers_actions_cha_empty() {
         let ha = HeaderAction {
             set: None,
             del: None,
@@ -796,7 +796,7 @@ mod tests {
     }
 
     #[test]
-    fn test_www_subdomain_to_apex_domain_http() {
+    fn www_subdomain_to_apex_domain_http() {
         assert_www_redirection(
             "www.example.com",
             "example.com",
@@ -807,7 +807,7 @@ mod tests {
     }
 
     #[test]
-    fn test_www_subdomain_to_apex_domain_https() {
+    fn www_subdomain_to_apex_domain_https() {
         assert_www_redirection(
             "www.example.com",
             "example.com",
@@ -818,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apex_domain_to_www_subdomain_http() {
+    fn apex_domain_to_www_subdomain_http() {
         assert_www_redirection(
             "example.com",
             "www.example.com",
@@ -829,7 +829,7 @@ mod tests {
     }
 
     #[test]
-    fn test_apex_domain_to_www_subdomain_https() {
+    fn apex_domain_to_www_subdomain_https() {
         assert_www_redirection(
             "example.com",
             "www.example.com",
@@ -840,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn test_www_subdomain_to_apex_domain_http_with_port() {
+    fn www_subdomain_to_apex_domain_http_with_port() {
         assert_www_redirection(
             "www.example.com",
             "example.com",
@@ -851,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    fn test_www_subdomain_to_apex_domain_https_with_port() {
+    fn www_subdomain_to_apex_domain_https_with_port() {
         assert_www_redirection(
             "www.example.com",
             "example.com",
