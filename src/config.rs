@@ -217,7 +217,7 @@ impl ServiceConfig {
 
             manage_server_targets(server, service, &config.loadbalancers, server_headers);
             www_auto_redirection(
-                server,
+                &mut server.params.targets,
                 &service.domain,
                 if service.tls.is_some() {
                     https_port
@@ -538,7 +538,12 @@ fn manage_weights(srv_nbr: usize, weights: &Option<Vec<u32>>) -> Option<Vec<u32>
     }
 }
 
-fn www_auto_redirection(server: &mut Server, service_domain: &str, port: u16, tls: bool) {
+fn www_auto_redirection(
+    server_targets: &mut ServerParamsTargets,
+    service_domain: &str,
+    port: u16,
+    tls: bool,
+) {
     let domain: String;
     let target_domain: String;
     let default_port = if tls {
@@ -567,7 +572,7 @@ fn www_auto_redirection(server: &mut Server, service_domain: &str, port: u16, tl
         }
     );
 
-    server.params.targets.insert(
+    server_targets.insert(
         domain,
         TargetType::Redirection(Redirection {
             params: TargetParams {
@@ -716,7 +721,7 @@ mod tests {
         tls: bool,
     ) {
         let mut server = server_mock();
-        www_auto_redirection(&mut server, target_domain, port, tls);
+        www_auto_redirection(&mut server.params.targets, target_domain, port, tls);
         let target = server.params.targets.get(source_domain).unwrap();
 
         assert!(
