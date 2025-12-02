@@ -33,7 +33,7 @@ const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct ServiceConfig {
+pub struct InternalConfig {
     pub servers: HashMap<String, Server>, // name -> Server
     pub global: Global,
     pub empty: bool,
@@ -135,12 +135,12 @@ pub struct Options {
     _child_process: bool,
 }
 
-impl ServiceConfig {
-    pub fn build_from(path: String) -> ServiceConfig {
+impl InternalConfig {
+    pub fn build_from(path: String) -> InternalConfig {
         let config = get_toml_config(path);
 
         // Check if the toml config has services.
-        // If not, define the ServiceConfig as empty
+        // If not, define the InternalConfig as empty
         // to serve the Welcome page.
         let empty = config.services.is_none();
 
@@ -267,7 +267,7 @@ impl ServiceConfig {
                 .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL),
         };
 
-        ServiceConfig {
+        InternalConfig {
             servers,
             global,
             empty,

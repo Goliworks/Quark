@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use config::tls::{self, IpcCerts};
-use config::{Options, ServiceConfig};
+use config::{InternalConfig, Options};
 
 use nix::unistd::{getuid, User};
 use tokio::sync::Mutex;
@@ -79,7 +79,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     // Get options from command line.
     let options: Options = argh::from_env();
     // Load the config file.
-    let service_config = ServiceConfig::build_from(options.config);
+    let service_config = InternalConfig::build_from(options.config);
 
     let mut paths_to_watch_list: HashMap<u16, Vec<PathBuf>> = HashMap::new();
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();

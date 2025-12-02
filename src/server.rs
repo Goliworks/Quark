@@ -25,7 +25,7 @@ use tokio_rustls::TlsAcceptor;
 use tracing::info;
 
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
-use crate::config::{self, Locations, Options, ServiceConfig, TargetType};
+use crate::config::{self, InternalConfig, Locations, Options, TargetType};
 use crate::ipc::{self, IpcMessage};
 use crate::server::handler::ServerHandler;
 use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
@@ -41,10 +41,9 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    // Get the size of the config from the parent process.
 
-    let message_sc = ipc::receive_ipc_message::<ServiceConfig>(&mut stream).await?;
-
+    // Get the InternalConfig from the parent process.
+    let message_sc = ipc::receive_ipc_message::<InternalConfig>(&mut stream).await?;
     let service_config = message_sc.payload;
 
     // Get the certs from the parent process.
@@ -76,7 +75,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn init_servers(
-    service_config: ServiceConfig,
+    service_config: InternalConfig,
     tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -141,6 +140,7 @@ async fn init_servers(
             servers.push(Box::pin(https_server));
         }
 
+        // Default http server. (Always enabled)
         let http_server = http_server(
             server.port,
             default_backlog,
