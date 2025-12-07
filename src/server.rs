@@ -186,53 +186,68 @@ fn build_http(global_config: &config::Global) -> Builder<TokioExecutor> {
     http_builder
 }
 
-fn https_server(
+fn generate_loadbalancing_config(
+    servers: &HashMap<String, config::Server>,
+) -> Arc<load_balancing::LoadBalancerConfig> {
+    let mut targets: Vec<&Locations> = Vec::new();
+    for (_, server) in servers.iter() {
+        for (_, target) in server.params.targets.iter() {
+            match target {
+                TargetType::Location(location) if location.algo.is_some() => {
+                    targets.push(location);
+                }
+                _ => (),
+            }
+        }
+    }
+
+    load_balancing::LoadBalancerConfig::new(targets)
+}
+
+struct PlainAcceptor;
+struct TlsAcceptorWrapper {
+    acceptor: TlsAcceptor,
+}
+
+trait StreamAcceptor: Send + Sync + 'static {
+    type Stream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static;
+    fn accept(
+        &self,
+        stream: tokio::net::TcpStream,
+    ) -> impl Future<Output = Result<Self::Stream, std::io::Error>> + Send;
+    fn name(&self) -> &'static str;
+}
+
+impl StreamAcceptor for PlainAcceptor {
+    type Stream = tokio::net::TcpStream;
+    async fn accept(&self, stream: tokio::net::TcpStream) -> Result<Self::Stream, std::io::Error> {
+        Ok(stream)
+    }
+    fn name(&self) -> &'static str {
+        "http"
+    }
+}
+
+impl StreamAcceptor for TlsAcceptorWrapper {
+    type Stream = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
+    async fn accept(&self, stream: tokio::net::TcpStream) -> Result<Self::Stream, std::io::Error> {
+        self.acceptor.accept(stream).await
+    }
+    fn name(&self) -> &'static str {
+        "https"
+    }
+}
+
+fn run_server<A: StreamAcceptor>(
     port: u16,
     default_backlog: i32,
-    tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
-    tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     max_conns: Arc<tokio::sync::Semaphore>,
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
+    acceptor: Arc<A>,
 ) -> impl Future<Output = ()> {
     let listener = create_listener(port, default_backlog);
-
     async move {
-        let mut rx = tx.subscribe();
-
-        let tls_certs = tls_certs.get(&port).unwrap();
-
-        let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
-        let ck_list = {
-            let mut guard = tls_config.lock().await;
-            Arc::new(guard.get_certified_key_list())
-        };
-
-        // Spawn a task to watch for certificates changes.
-        let port_string = port.to_string();
-        let ck_list_clone = ck_list.clone();
-        tokio::spawn(async move {
-            while let Ok(msg) = rx.recv().await {
-                if msg.key.as_ref().unwrap() == &port_string {
-                    info!("New certificates for port {}", port);
-                    msg.payload.iter().for_each(|cert| {
-                        reload_certificates(cert, ck_list_clone.clone());
-                    })
-                }
-            }
-        });
-
-        // Generate the sni resolver pass it to the tls_config
-        // to get the rustls server config.
-        let resolver = SniCertResolver::new(ck_list);
-        let server_config = {
-            let guard = tls_config.lock().await;
-            guard.get_tls_config(resolver)
-        };
-
-        // Create the tls acceptor with the rustls server config.
-        let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
-
         loop {
             let res = listener.accept().await;
             let (stream, address) = match res {
@@ -244,19 +259,19 @@ fn https_server(
             };
 
             let client_ip = format_ip(address.ip());
-            let acceptor = tls_acceptor.clone();
+            let acceptor = acceptor.clone();
             let max_conns = Arc::clone(&max_conns);
             let server_handler = Arc::clone(&server_handler);
-
-            // This service will handle the connection.
-            let service = service_fn(move |req| {
-                let server_handler = Arc::clone(&server_handler);
-                let client_ip = client_ip.clone();
-                async move { server_handler.handle(req, client_ip, "https").await }
-            });
-
             let http = http.clone();
+
             tokio::task::spawn(async move {
+                let protocol = acceptor.name();
+                let service = service_fn(move |req| {
+                    let server_handler = Arc::clone(&server_handler);
+                    let client_ip = client_ip.clone();
+                    async move { server_handler.handle(req, client_ip, protocol).await }
+                });
+
                 let _permit = match max_conns.clone().try_acquire_owned() {
                     Ok(p) => p,
                     Err(_) => {
@@ -280,6 +295,31 @@ fn https_server(
     }
 }
 
+async fn https_server(
+    port: u16,
+    default_backlog: i32,
+    tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
+    tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
+    max_conns: Arc<tokio::sync::Semaphore>,
+    http: Arc<Builder<TokioExecutor>>,
+    server_handler: Arc<ServerHandler>,
+) {
+    let tls_acceptor = build_tls_acceptor_with_reload(port, tx, tls_certs).await;
+    let acceptor = Arc::new(TlsAcceptorWrapper {
+        acceptor: tls_acceptor,
+    });
+
+    run_server(
+        port,
+        default_backlog,
+        max_conns,
+        http,
+        server_handler,
+        acceptor,
+    )
+    .await;
+}
+
 fn http_server(
     port: u16,
     default_backlog: i32,
@@ -287,61 +327,56 @@ fn http_server(
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
 ) -> impl Future<Output = ()> {
-    let listener = create_listener(port, default_backlog);
-    async move {
-        loop {
-            let res = listener.accept().await;
-            let (stream, address) = match res {
-                Ok(res) => res,
-                Err(err) => {
-                    tracing::error!("failed to accept connection: {err:#}");
-                    continue;
-                }
-            };
-
-            let client_ip = format_ip(address.ip());
-            let max_conns = Arc::clone(&max_conns);
-            let server_handler = Arc::clone(&server_handler);
-
-            // This service will handle the connection.
-            let service = service_fn(move |req| {
-                let server_handler = Arc::clone(&server_handler);
-                let client_ip = client_ip.clone();
-                async move { server_handler.handle(req, client_ip, "http").await }
-            });
-            let http = http.clone();
-            tokio::task::spawn(async move {
-                let _permit = match max_conns.clone().try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        tracing::error!("Too many TLS connection. Connection closed.");
-                        return;
-                    }
-                };
-                if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await {
-                    tracing::error!("failed to serve connection: {err:#}");
-                }
-            });
-        }
-    }
+    let acceptor = Arc::new(PlainAcceptor {});
+    run_server(
+        port,
+        default_backlog,
+        max_conns,
+        http,
+        server_handler,
+        acceptor,
+    )
 }
 
-fn generate_loadbalancing_config(
-    servers: &HashMap<String, config::Server>,
-) -> Arc<load_balancing::LoadBalancerConfig> {
-    let mut targets: Vec<&Locations> = Vec::new();
-    for (_, server) in servers.iter() {
-        for (_, target) in server.params.targets.iter() {
-            match target {
-                TargetType::Location(location) if location.algo.is_some() => {
-                    targets.push(location);
-                }
-                _ => (),
+async fn build_tls_acceptor_with_reload(
+    port: u16,
+    tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
+    tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
+) -> TlsAcceptor {
+    let mut rx = tx.subscribe();
+
+    let tls_certs = tls_certs.get(&port).unwrap();
+
+    let tls_config = Arc::new(tokio::sync::Mutex::new(TlsConfig::new(tls_certs)));
+    let ck_list = {
+        let mut guard = tls_config.lock().await;
+        Arc::new(guard.get_certified_key_list())
+    };
+
+    // Spawn a task to watch for certificates changes.
+    let port_string = port.to_string();
+    let ck_list_clone = ck_list.clone();
+    tokio::spawn(async move {
+        while let Ok(msg) = rx.recv().await {
+            if msg.key.as_ref().unwrap() == &port_string {
+                info!("New certificates for port {}", port);
+                msg.payload.iter().for_each(|cert| {
+                    reload_certificates(cert, ck_list_clone.clone());
+                })
             }
         }
-    }
+    });
 
-    load_balancing::LoadBalancerConfig::new(targets)
+    // Generate the sni resolver pass it to the tls_config
+    // to get the rustls server config.
+    let resolver = SniCertResolver::new(ck_list);
+    let server_config = {
+        let guard = tls_config.lock().await;
+        guard.get_tls_config(resolver)
+    };
+
+    // Create the tls acceptor with the rustls server config.
+    TlsAcceptor::from(Arc::new(server_config))
 }
 
 fn create_listener(port: u16, backlog: i32) -> TcpListener {
