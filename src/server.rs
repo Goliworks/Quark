@@ -215,7 +215,7 @@ trait StreamAcceptor: Send + Sync + 'static {
         &self,
         stream: tokio::net::TcpStream,
     ) -> impl Future<Output = Result<Self::Stream, std::io::Error>> + Send;
-    fn name(&self) -> &'static str;
+    fn protocol(&self) -> &'static str;
 }
 
 impl StreamAcceptor for PlainAcceptor {
@@ -223,7 +223,7 @@ impl StreamAcceptor for PlainAcceptor {
     async fn accept(&self, stream: tokio::net::TcpStream) -> Result<Self::Stream, std::io::Error> {
         Ok(stream)
     }
-    fn name(&self) -> &'static str {
+    fn protocol(&self) -> &'static str {
         "http"
     }
 }
@@ -233,7 +233,7 @@ impl StreamAcceptor for TlsAcceptorWrapper {
     async fn accept(&self, stream: tokio::net::TcpStream) -> Result<Self::Stream, std::io::Error> {
         self.acceptor.accept(stream).await
     }
-    fn name(&self) -> &'static str {
+    fn protocol(&self) -> &'static str {
         "https"
     }
 }
@@ -246,7 +246,7 @@ fn run_server<A: StreamAcceptor>(
     server_handler: Arc<ServerHandler>,
     acceptor: Arc<A>,
 ) -> impl Future<Output = ()> {
-    let listener = create_listener(port, default_backlog);
+    let listener = build_tcp_listener(port, default_backlog);
     async move {
         loop {
             let res = listener.accept().await;
@@ -265,17 +265,17 @@ fn run_server<A: StreamAcceptor>(
             let http = http.clone();
 
             tokio::task::spawn(async move {
-                let protocol = acceptor.name();
+                let protocol = acceptor.protocol();
                 let service = service_fn(move |req| {
                     let server_handler = Arc::clone(&server_handler);
                     let client_ip = client_ip.clone();
                     async move { server_handler.handle(req, client_ip, protocol).await }
                 });
 
-                let _permit = match max_conns.clone().try_acquire_owned() {
+                let _permit = match max_conns.try_acquire_owned() {
                     Ok(p) => p,
                     Err(_) => {
-                        tracing::error!("Too many TLS connection. Connection closed.");
+                        tracing::error!("Too many connection. Connection closed.");
                         return;
                     }
                 };
@@ -283,10 +283,11 @@ fn run_server<A: StreamAcceptor>(
                 let stream = match acceptor.accept(stream).await {
                     Ok(stream) => stream,
                     Err(err) => {
-                        tracing::error!("failed to perform tls handshake: {err:#}");
+                        tracing::error!("failed to perform TLS handshake: {err:#}");
                         return;
                     }
                 };
+
                 if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await {
                     tracing::error!("failed to serve connection: {err:#}");
                 }
@@ -320,14 +321,14 @@ async fn https_server(
     .await;
 }
 
-fn http_server(
+async fn http_server(
     port: u16,
     default_backlog: i32,
     max_conns: Arc<tokio::sync::Semaphore>,
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
-) -> impl Future<Output = ()> {
-    let acceptor = Arc::new(PlainAcceptor {});
+) {
+    let acceptor = Arc::new(PlainAcceptor);
     run_server(
         port,
         default_backlog,
@@ -336,6 +337,7 @@ fn http_server(
         server_handler,
         acceptor,
     )
+    .await;
 }
 
 async fn build_tls_acceptor_with_reload(
@@ -379,7 +381,7 @@ async fn build_tls_acceptor_with_reload(
     TlsAcceptor::from(Arc::new(server_config))
 }
 
-fn create_listener(port: u16, backlog: i32) -> TcpListener {
+fn build_tcp_listener(port: u16, backlog: i32) -> TcpListener {
     // Build TCP Socket and Socket Address.
     let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
     let socket_addr: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
