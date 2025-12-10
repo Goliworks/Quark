@@ -27,6 +27,7 @@ const DEFAULT_MAX_REQUESTS: usize = 100;
 const DEFAULT_KEEPALIVE: bool = true;
 const DEFAULT_KEEPALIVE_TIMEOUT: u64 = 60;
 const DEFAULT_KEEPALIVE_INTERVAL: u64 = 20;
+const DEFAULT_TLS_HANDSHAKE_TIMEOUT: u64 = 10;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
@@ -47,6 +48,7 @@ pub struct Global {
     pub keepalive: bool,
     pub keepalive_timeout: u64,
     pub keepalive_interval: u64,
+    pub tls_handshake_timeout: u64,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -265,6 +267,9 @@ impl InternalConfig {
             keepalive_interval: global_config
                 .and_then(|g| g.keepalive_interval)
                 .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL),
+            tls_handshake_timeout: global_config
+                .and_then(|g| g.tls_handshake_timeout)
+                .unwrap_or(DEFAULT_TLS_HANDSHAKE_TIMEOUT),
         };
 
         InternalConfig {

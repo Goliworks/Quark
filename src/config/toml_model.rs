@@ -29,6 +29,7 @@ pub struct Global {
     pub keepalive: Option<bool>,
     pub keepalive_timeout: Option<u64>,
     pub keepalive_interval: Option<u64>,
+    pub tls_handshake_timeout: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

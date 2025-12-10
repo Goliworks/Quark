@@ -127,9 +127,14 @@ async fn init_servers(
             let server_handler = Arc::clone(&server_handler);
             let tls_certs = Arc::clone(&tls_certs).clone();
 
-            let https_server = https_server(
-                server.https_port,
+            let https_server_config = HttpsServerConfig {
+                port: server.https_port,
                 default_backlog,
+                handshake_timeout: service_config.global.tls_handshake_timeout,
+            };
+
+            let https_server = https_server(
+                https_server_config,
                 tx,
                 tls_certs,
                 max_conns,
@@ -207,6 +212,7 @@ fn generate_loadbalancing_config(
 struct PlainAcceptor;
 struct TlsAcceptorWrapper {
     acceptor: TlsAcceptor,
+    handshake_timeout: u64,
 }
 
 trait StreamAcceptor: Send + Sync + 'static {
@@ -231,7 +237,15 @@ impl StreamAcceptor for PlainAcceptor {
 impl StreamAcceptor for TlsAcceptorWrapper {
     type Stream = tokio_rustls::server::TlsStream<tokio::net::TcpStream>;
     async fn accept(&self, stream: tokio::net::TcpStream) -> Result<Self::Stream, std::io::Error> {
-        self.acceptor.accept(stream).await
+        match tokio::time::timeout(
+            tokio::time::Duration::from_secs(self.handshake_timeout),
+            self.acceptor.accept(stream),
+        )
+        .await
+        {
+            Ok(res) => res,
+            Err(_) => Err(std::io::ErrorKind::TimedOut.into()),
+        }
     }
     fn protocol(&self) -> &'static str {
         "https"
@@ -296,23 +310,29 @@ fn run_server<A: StreamAcceptor>(
     }
 }
 
-async fn https_server(
+struct HttpsServerConfig {
     port: u16,
     default_backlog: i32,
+    handshake_timeout: u64,
+}
+
+async fn https_server(
+    config: HttpsServerConfig,
     tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
     tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     max_conns: Arc<tokio::sync::Semaphore>,
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
 ) {
-    let tls_acceptor = build_tls_acceptor_with_reload(port, tx, tls_certs).await;
+    let tls_acceptor = build_tls_acceptor_with_reload(config.port, tx, tls_certs).await;
     let acceptor = Arc::new(TlsAcceptorWrapper {
         acceptor: tls_acceptor,
+        handshake_timeout: config.handshake_timeout,
     });
 
     run_server(
-        port,
-        default_backlog,
+        config.port,
+        config.default_backlog,
         max_conns,
         http,
         server_handler,
