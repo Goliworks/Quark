@@ -44,7 +44,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get the InternalConfig from the parent process.
     let message_sc = ipc::receive_ipc_message::<InternalConfig>(&mut stream).await?;
-    let service_config = message_sc.payload;
+    let internal_config = message_sc.payload;
 
     // Get the certs from the parent process.
     let message_certs =
@@ -69,7 +69,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Init logs. Declare a var to keep the guard alive in this scope.
     let _guard = logs::start_logs(options.logs);
 
-    init_servers(service_config, tls_certs, tx).await?;
+    init_servers(internal_config, tls_certs, tx).await?;
 
     Ok(())
 }
@@ -176,6 +176,7 @@ fn build_http(global_config: &config::Global) -> Builder<TokioExecutor> {
     http_builder
         .http1()
         .keep_alive(global_config.keepalive)
+        .header_read_timeout(Duration::from_secs(global_config.http_header_timeout))
         .timer(TokioTimer::new());
 
     http_builder
