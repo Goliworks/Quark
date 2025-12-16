@@ -98,20 +98,10 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
                 if path.is_symlink() {
                     // If it is, add the target of the symlink to the list of paths to watch.
                     let target = std::fs::canonicalize(path).unwrap();
-                    let directory = target.parent().unwrap();
-                    let pathbuf = directory.to_path_buf();
-                    let paths_to_watch = paths_to_watch_list.entry(port).or_default();
-                    if !paths_to_watch.contains(&pathbuf) {
-                        paths_to_watch.push(pathbuf);
-                    }
+                    add_path_to_watcher(target, port, &mut paths_to_watch_list);
                 }
                 // Add the directory of the file to the list of paths to watch.
-                let directory = path.parent().unwrap();
-                let pathbuf = directory.to_path_buf();
-                let paths_to_watch = paths_to_watch_list.entry(port).or_default();
-                if !paths_to_watch.contains(&pathbuf) {
-                    paths_to_watch.push(pathbuf);
-                }
+                add_path_to_watcher(path.to_path_buf(), port, &mut paths_to_watch_list);
                 // Read the certificate and the key.
                 match IpcCerts::build(&cert.cert, &cert.key).await {
                     Ok(certs) => {
@@ -150,4 +140,13 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     Ok(())
+}
+
+fn add_path_to_watcher(target: PathBuf, port: u16, list: &mut HashMap<u16, Vec<PathBuf>>) {
+    let directory = target.parent().unwrap();
+    let pathbuf = directory.to_path_buf();
+    let paths_to_watch = list.entry(port).or_default();
+    if !paths_to_watch.contains(&pathbuf) {
+        paths_to_watch.push(pathbuf);
+    }
 }
