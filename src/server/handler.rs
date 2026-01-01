@@ -17,6 +17,12 @@ use crate::{
 
 use super::server_utils::ProxyHandlerBody;
 
+pub struct HandlerParams<'a> {
+    pub req: Request<Incoming>,
+    pub client_ip: String,
+    pub scheme: &'a str,
+}
+
 pub struct ServerHandler {
     params: Arc<ServerParams>,
     loadbalancer: Arc<load_balancing::LoadBalancerConfig>,
@@ -41,14 +47,12 @@ impl ServerHandler {
 
     #[tracing::instrument(
     name = "Handler",
-    fields(ip = %client_ip),
-    skip(self, req, client_ip, scheme)
+    fields(ip = %hp.client_ip),
+    skip(self, hp)
     )]
     pub async fn handle(
         &self,
-        req: Request<Incoming>,
-        client_ip: String,
-        scheme: &str,
+        hp: HandlerParams<'_>,
     ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
         // Use the semaphore to limit the number of requests to the upstream server.
         let _permit = match self.max_req.clone().try_acquire_owned() {
@@ -61,7 +65,7 @@ impl ServerHandler {
         };
 
         // Get the authority and domain from the request.
-        let (authority, domain) = match get_authority_and_domain(&req) {
+        let (authority, domain) = match get_authority_and_domain(&hp.req) {
             Ok((authority, domain)) => (authority, domain),
             Err(err) => {
                 tracing::error!("{}", err);
@@ -70,13 +74,13 @@ impl ServerHandler {
         };
 
         // Get the path from the request.
-        let path = req.uri().path_and_query().map_or("/", |p| p.as_str());
-        let source_url = format!("{}://{}{}", scheme, &authority, path);
+        let path = hp.req.uri().path_and_query().map_or("/", |p| p.as_str());
+        let source_url = format!("{}://{}{}", hp.scheme, &authority, path);
 
         tracing::info!("Navigate to {}", &source_url);
 
         // Redirect to HTTPS if the server has TLS configuration.
-        if scheme == "http" {
+        if hp.scheme == "http" {
             if let Some(dom) = self
                 .params
                 .auto_tls
@@ -102,7 +106,7 @@ impl ServerHandler {
             .get(utils::remove_last_slash(&match_url))
         {
             return self
-                .strict_match(target_type, req, authority, scheme, source_url, client_ip)
+                .strict_match(hp, target_type, authority, source_url)
                 .await;
         }
 
@@ -114,7 +118,7 @@ impl ServerHandler {
         {
             // First, check for a strict match.
             Some(target_type) => {
-                self.strict_match(target_type, req, authority, scheme, source_url, client_ip)
+                self.strict_match(hp, target_type, authority, source_url)
                     .await
             }
             // If no strict match, check for a match with the path.
@@ -128,7 +132,7 @@ impl ServerHandler {
                                     &target.id,
                                     &target.params.location,
                                     &target.algo,
-                                    &client_ip,
+                                    &hp.client_ip,
                                 );
                                 let uri_path = format!(
                                     "{}{}",
@@ -137,13 +141,11 @@ impl ServerHandler {
                                 );
                                 return self
                                     .proxy_request(
+                                        hp,
                                         uri_path,
-                                        req,
                                         &target.params.headers,
                                         authority,
-                                        scheme,
                                         source_url,
-                                        client_ip,
                                     )
                                     .await;
                             }
@@ -197,12 +199,10 @@ impl ServerHandler {
 
     async fn strict_match(
         &self,
+        hp: HandlerParams<'_>,
         target_type: &TargetType,
-        req: Request<Incoming>,
         authority: String,
-        scheme: &str,
         source_url: String,
-        client_ip: String,
     ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
         match target_type {
             TargetType::Location(target) => {
@@ -210,18 +210,10 @@ impl ServerHandler {
                     &target.id,
                     &target.params.location,
                     &target.algo,
-                    &client_ip,
+                    &hp.client_ip,
                 );
-                self.proxy_request(
-                    location,
-                    req,
-                    &target.params.headers,
-                    authority,
-                    scheme,
-                    source_url,
-                    client_ip,
-                )
-                .await
+                self.proxy_request(hp, location, &target.params.headers, authority, source_url)
+                    .await
             }
             TargetType::FileServer(file_server) => {
                 let mut serve_files = serve_file::serve_file(
@@ -250,16 +242,14 @@ impl ServerHandler {
 
     async fn proxy_request(
         &self,
+        hp: HandlerParams<'_>,
         uri: String,
-        req: Request<Incoming>,
         headers: &ConfigHeaders,
         authority: String,
-        scheme: &str,
         source_url: String,
-        client_ip: String,
     ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
         // Extract parts and body from the request.
-        let (mut parts, body) = req.into_parts();
+        let (mut parts, body) = hp.req.into_parts();
 
         // Request the targeted server.
         let mut new_req: Request<Incoming> = {
@@ -278,7 +268,7 @@ impl ServerHandler {
         // Add the X-Forwarded-For header to the request.
         new_req.headers_mut().insert(
             HeaderName::from_str("X-Forwarded-For").unwrap(),
-            HeaderValue::from_str(&client_ip).unwrap(),
+            HeaderValue::from_str(&hp.client_ip).unwrap(),
         );
         // Add the X-Forwarded-Host header to the request.
         new_req.headers_mut().insert(
@@ -288,7 +278,7 @@ impl ServerHandler {
         // Add the X-Forwarded-Proto header to the request.
         new_req.headers_mut().insert(
             HeaderName::from_str("X-Forwarded-Proto").unwrap(),
-            HeaderValue::from_str(scheme).unwrap(),
+            HeaderValue::from_str(hp.scheme).unwrap(),
         );
 
         // Add or remove headers defined in the config file.

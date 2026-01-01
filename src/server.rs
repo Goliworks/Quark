@@ -284,7 +284,12 @@ fn run_server<A: StreamAcceptor>(
                 let service = service_fn(move |req| {
                     let server_handler = Arc::clone(&server_handler);
                     let client_ip = client_ip.clone();
-                    async move { server_handler.handle(req, client_ip, protocol).await }
+                    let handler_params = handler::HandlerParams {
+                        req,
+                        client_ip,
+                        scheme: protocol,
+                    };
+                    async move { server_handler.handle(handler_params).await }
                 });
 
                 let _permit = match max_conns.try_acquire_owned() {
