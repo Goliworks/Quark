@@ -10,7 +10,9 @@ use std::time::Duration;
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use hyper::service::service_fn;
+use hyper::body::Incoming;
+use hyper::service::{service_fn, Service};
+use hyper::{Request, Response};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioTimer;
 use hyper_util::{
@@ -28,6 +30,7 @@ use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConf
 use crate::config::{self, InternalConfig, Locations, Options, TargetType};
 use crate::ipc::{self, IpcMessage};
 use crate::server::handler::ServerHandler;
+use crate::server::server_utils::ProxyHandlerBody;
 use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
 use crate::{load_balancing, logs};
 
@@ -287,10 +290,11 @@ fn run_server<A: StreamAcceptor>(
                     let handler_params = handler::HandlerParams {
                         req,
                         client_ip,
-                        scheme: protocol,
+                        scheme: protocol.to_string(),
                     };
                     async move { server_handler.handle(handler_params).await }
                 });
+                let service = ServerService::new(service);
 
                 let _permit = match max_conns.try_acquire_owned() {
                     Ok(p) => p,
@@ -364,6 +368,38 @@ async fn http_server(
         acceptor,
     )
     .await;
+}
+
+struct ServerService<S> {
+    inner: S,
+}
+
+impl<S> ServerService<S> {
+    fn new(inner: S) -> Self {
+        Self { inner }
+    }
+}
+
+impl<S> Service<Request<Incoming>> for ServerService<S>
+where
+    S: Service<Request<Incoming>, Response = Response<ProxyHandlerBody>>,
+    S::Error: Send + 'static,
+    S::Future: Send + 'static,
+{
+    type Response = Response<ProxyHandlerBody>;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        println!("Service - Request: {}", req.uri());
+        let fut = self.inner.call(req);
+
+        Box::pin(async move {
+            let res = fut.await?;
+            println!("Service - Response: {}", res.status());
+            Ok(res)
+        })
+    }
 }
 
 async fn build_tls_acceptor_with_reload(

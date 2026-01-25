@@ -17,10 +17,10 @@ use crate::{
 
 use super::server_utils::ProxyHandlerBody;
 
-pub struct HandlerParams<'a> {
+pub struct HandlerParams {
     pub req: Request<Incoming>,
     pub client_ip: String,
-    pub scheme: &'a str,
+    pub scheme: String,
 }
 
 pub struct ServerHandler {
@@ -52,7 +52,7 @@ impl ServerHandler {
     )]
     pub async fn handle(
         &self,
-        hp: HandlerParams<'_>,
+        hp: HandlerParams,
     ) -> Result<Response<ProxyHandlerBody>, hyper::Error> {
         // Use the semaphore to limit the number of requests to the upstream server.
         let _permit = match self.max_req.clone().try_acquire_owned() {
@@ -199,7 +199,7 @@ impl ServerHandler {
 
     async fn strict_match(
         &self,
-        hp: HandlerParams<'_>,
+        hp: HandlerParams,
         target_type: &TargetType,
         authority: String,
         source_url: String,
@@ -242,7 +242,7 @@ impl ServerHandler {
 
     async fn proxy_request(
         &self,
-        hp: HandlerParams<'_>,
+        hp: HandlerParams,
         uri: String,
         headers: &ConfigHeaders,
         authority: String,
@@ -278,7 +278,7 @@ impl ServerHandler {
         // Add the X-Forwarded-Proto header to the request.
         new_req.headers_mut().insert(
             HeaderName::from_str("X-Forwarded-Proto").unwrap(),
-            HeaderValue::from_str(hp.scheme).unwrap(),
+            HeaderValue::from_str(&hp.scheme).unwrap(),
         );
 
         // Add or remove headers defined in the config file.
