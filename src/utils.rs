@@ -1,10 +1,15 @@
 use nix::unistd::{getuid, setgid, setgroups, setuid, Group, User};
 use std::{
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
 };
 
 pub const QUARK_USER_AND_GROUP: &str = "quark";
+pub static CACHED_CURRENT_TIME: AtomicU64 = AtomicU64::new(0);
+
+pub fn get_current_time() -> u64 {
+    CACHED_CURRENT_TIME.load(Ordering::Relaxed)
+}
 
 pub fn remove_last_slash(path: &str) -> &str {
     if let Some(p) = path.strip_suffix("/") {

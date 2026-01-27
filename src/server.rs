@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr};
 use std::pin::Pin;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
@@ -31,7 +32,9 @@ use crate::config::{self, InternalConfig, Locations, Options, TargetType};
 use crate::ipc::{self, IpcMessage};
 use crate::server::handler::ServerHandler;
 use crate::server::server_utils::ProxyHandlerBody;
-use crate::utils::{drop_privileges, format_ip, QUARK_USER_AND_GROUP};
+use crate::utils::{
+    drop_privileges, format_ip, get_current_time, CACHED_CURRENT_TIME, QUARK_USER_AND_GROUP,
+};
 use crate::{load_balancing, logs};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,6 +75,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Init logs. Declare a var to keep the guard alive in this scope.
     let _guard = logs::start_logs(options.logs);
 
+    update_cached_time_worker();
     init_servers(internal_config, tls_certs, tx).await?;
 
     Ok(())
@@ -256,6 +260,9 @@ impl StreamAcceptor for TlsAcceptorWrapper {
     }
 }
 
+const IDLE_TIMEOUT_SECS: u64 = 300;
+const CHECK_INTERVAL_SECS: u64 = 10;
+
 fn run_server<A: StreamAcceptor>(
     port: u16,
     default_backlog: i32,
@@ -312,8 +319,51 @@ fn run_server<A: StreamAcceptor>(
                     }
                 };
 
-                if let Err(err) = http.serve_connection(TokioIo::new(stream), service).await {
-                    tracing::error!("failed to serve connection: {err:#}");
+                let conn = http.serve_connection(TokioIo::new(stream), service.clone());
+                tokio::pin!(conn);
+
+                let mut check_interval =
+                    tokio::time::interval(Duration::from_secs(CHECK_INTERVAL_SECS));
+                check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+                loop {
+                    tokio::select! {
+                        res = conn.as_mut() => {
+                            match res {
+                                Ok(_) => {
+                                    tracing::info!("Connection closed");
+                                },
+                                Err(err) => {
+                                    tracing::error!("failed to serve connection: {err:#}");
+                                }
+                            }
+                            break;
+                        }
+                        _ = check_interval.tick() => {
+                            let idle_secs = service.seconds_since_last_activity();
+
+                            if idle_secs >= IDLE_TIMEOUT_SECS {
+                               tracing::warn!(
+                                    idle_seconds = idle_secs,
+                                    "Connection idle timeout, closing connection"
+                               );
+
+                                conn.as_mut().graceful_shutdown();
+                                if tokio::time::timeout(
+                                    Duration::from_secs(5),
+                                    conn.as_mut()
+                                ).await.is_err() {
+                                    tracing::warn!("Connection shutdown timeout");
+                                }
+                                break;
+                            } else {
+                                tracing::debug!(
+                                    idle_seconds = idle_secs,
+                                    "Connection idle"
+                                );
+                            }
+                        }
+                    }
                 }
             });
         }
@@ -370,13 +420,28 @@ async fn http_server(
     .await;
 }
 
+#[derive(Clone)]
 struct ServerService<S> {
     inner: S,
+    last_activity: Arc<AtomicU64>,
 }
 
 impl<S> ServerService<S> {
     fn new(inner: S) -> Self {
-        Self { inner }
+        Self {
+            inner,
+            last_activity: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn update_activity(&self) {
+        let now = get_current_time();
+        self.last_activity.store(now, Ordering::Relaxed);
+    }
+
+    fn seconds_since_last_activity(&self) -> u64 {
+        let now = get_current_time();
+        now - self.last_activity.load(Ordering::Relaxed)
     }
 }
 
@@ -392,6 +457,7 @@ where
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
         println!("Service - Request: {}", req.uri());
+        self.update_activity();
         let fut = self.inner.call(req);
 
         Box::pin(async move {
@@ -460,4 +526,19 @@ fn build_tcp_listener(port: u16, backlog: i32) -> TcpListener {
     // Create and return the listener.
     info!("Server listening on port {}", port);
     TcpListener::from_std(socket.into()).unwrap()
+}
+
+static TIME_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+fn update_cached_time_worker() {
+    TIME_START.get_or_init(Instant::now);
+    tokio::spawn(async {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let start = TIME_START.get().unwrap();
+        loop {
+            interval.tick().await;
+            CACHED_CURRENT_TIME.store(start.elapsed().as_secs(), Ordering::Relaxed);
+        }
+    });
 }
