@@ -7,11 +7,12 @@ use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use hyper::body::Incoming;
+use hyper::body::{Body, Frame, Incoming};
 use hyper::service::{service_fn, Service};
 use hyper::{Request, Response};
 use hyper_util::client::legacy::Client;
@@ -20,6 +21,7 @@ use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
+use pin_project_lite::pin_project;
 use server_utils::welcome_server;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
@@ -290,14 +292,15 @@ fn run_server<A: StreamAcceptor>(
             let http = http.clone();
 
             tokio::task::spawn(async move {
-                let protocol = acceptor.protocol();
+                let protocol = acceptor.protocol().to_string();
                 let service = service_fn(move |req| {
                     let server_handler = Arc::clone(&server_handler);
                     let client_ip = client_ip.clone();
+                    let protocol = protocol.clone();
                     let handler_params = handler::HandlerParams {
                         req,
                         client_ip,
-                        scheme: protocol.to_string(),
+                        scheme: protocol,
                     };
                     async move { server_handler.handle(handler_params).await }
                 });
@@ -447,24 +450,76 @@ impl<S> ServerService<S> {
 
 impl<S> Service<Request<Incoming>> for ServerService<S>
 where
-    S: Service<Request<Incoming>, Response = Response<ProxyHandlerBody>>,
+    S: Service<Request<Incoming>, Response = Response<ProxyHandlerBody>> + Clone + Send + 'static,
     S::Error: Send + 'static,
     S::Future: Send + 'static,
 {
-    type Response = Response<ProxyHandlerBody>;
+    type Response = Response<ActivityTrackingBody<ProxyHandlerBody>>;
     type Error = S::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn call(&self, req: Request<Incoming>) -> Self::Future {
-        println!("Service - Request: {}", req.uri());
         self.update_activity();
-        let fut = self.inner.call(req);
+        let inner = self.inner.clone();
+        let last_activity = Arc::clone(&self.last_activity);
 
         Box::pin(async move {
-            let res = fut.await?;
-            println!("Service - Response: {}", res.status());
-            Ok(res)
+            let res = inner.call(req).await?;
+            let (parts, body) = res.into_parts();
+            let tracking_body = ActivityTrackingBody::new(body, last_activity);
+            Ok(Response::from_parts(parts, tracking_body))
         })
+    }
+}
+
+pin_project! {
+    struct ActivityTrackingBody<B> {
+        #[pin]
+        inner: B,
+        last_activity: Arc<AtomicU64>,
+    }
+}
+
+impl<B> ActivityTrackingBody<B> {
+    fn new(inner: B, last_activity: Arc<AtomicU64>) -> Self {
+        Self {
+            inner,
+            last_activity,
+        }
+    }
+}
+
+impl<B> Body for ActivityTrackingBody<B>
+where
+    B: Body,
+{
+    type Data = B::Data;
+    type Error = B::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        let this = self.project();
+        match this.inner.poll_frame(cx) {
+            Poll::Ready(Some(Ok(frame))) => {
+                if frame.is_data() {
+                    // Update last activity.
+                    let now = get_current_time();
+                    this.last_activity.store(now, Ordering::Relaxed);
+                }
+                Poll::Ready(Some(Ok(frame)))
+            }
+            other => other,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        self.inner.size_hint()
     }
 }
 
