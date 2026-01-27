@@ -3,6 +3,7 @@ mod http_response;
 mod ipc;
 mod load_balancing;
 mod logs;
+mod middleware;
 mod server;
 mod utils;
 

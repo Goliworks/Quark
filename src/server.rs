@@ -6,22 +6,18 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv6Addr};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::task::{Context, Poll};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
-use hyper::body::{Body, Frame, Incoming};
-use hyper::service::{service_fn, Service};
-use hyper::{Request, Response};
+use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioTimer;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder,
 };
-use pin_project_lite::pin_project;
 use server_utils::welcome_server;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
@@ -32,11 +28,9 @@ use tracing::info;
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
 use crate::config::{self, InternalConfig, Locations, Options, TargetType};
 use crate::ipc::{self, IpcMessage};
+use crate::middleware::ServerService;
 use crate::server::handler::ServerHandler;
-use crate::server::server_utils::ProxyHandlerBody;
-use crate::utils::{
-    drop_privileges, format_ip, get_current_time, CACHED_CURRENT_TIME, QUARK_USER_AND_GROUP,
-};
+use crate::utils::{drop_privileges, format_ip, CACHED_CURRENT_TIME, QUARK_USER_AND_GROUP};
 use crate::{load_balancing, logs};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,6 +72,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = logs::start_logs(options.logs);
 
     update_cached_time_worker();
+
     init_servers(internal_config, tls_certs, tx).await?;
 
     Ok(())
@@ -421,106 +416,6 @@ async fn http_server(
         acceptor,
     )
     .await;
-}
-
-#[derive(Clone)]
-struct ServerService<S> {
-    inner: S,
-    last_activity: Arc<AtomicU64>,
-}
-
-impl<S> ServerService<S> {
-    fn new(inner: S) -> Self {
-        Self {
-            inner,
-            last_activity: Arc::new(AtomicU64::new(0)),
-        }
-    }
-
-    fn update_activity(&self) {
-        let now = get_current_time();
-        self.last_activity.store(now, Ordering::Relaxed);
-    }
-
-    fn seconds_since_last_activity(&self) -> u64 {
-        let now = get_current_time();
-        now - self.last_activity.load(Ordering::Relaxed)
-    }
-}
-
-impl<S> Service<Request<Incoming>> for ServerService<S>
-where
-    S: Service<Request<Incoming>, Response = Response<ProxyHandlerBody>> + Clone + Send + 'static,
-    S::Error: Send + 'static,
-    S::Future: Send + 'static,
-{
-    type Response = Response<ActivityTrackingBody<ProxyHandlerBody>>;
-    type Error = S::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn call(&self, req: Request<Incoming>) -> Self::Future {
-        self.update_activity();
-        let inner = self.inner.clone();
-        let last_activity = Arc::clone(&self.last_activity);
-
-        Box::pin(async move {
-            let res = inner.call(req).await?;
-            let (parts, body) = res.into_parts();
-            let tracking_body = ActivityTrackingBody::new(body, last_activity);
-            Ok(Response::from_parts(parts, tracking_body))
-        })
-    }
-}
-
-pin_project! {
-    struct ActivityTrackingBody<B> {
-        #[pin]
-        inner: B,
-        last_activity: Arc<AtomicU64>,
-    }
-}
-
-impl<B> ActivityTrackingBody<B> {
-    fn new(inner: B, last_activity: Arc<AtomicU64>) -> Self {
-        Self {
-            inner,
-            last_activity,
-        }
-    }
-}
-
-impl<B> Body for ActivityTrackingBody<B>
-where
-    B: Body,
-{
-    type Data = B::Data;
-    type Error = B::Error;
-
-    fn poll_frame(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
-        let this = self.project();
-        match this.inner.poll_frame(cx) {
-            Poll::Ready(Some(Ok(frame))) => {
-                if frame.is_data() {
-                    // Update last activity.
-                    let now = get_current_time();
-                    this.last_activity.store(now, Ordering::Relaxed);
-                }
-                Poll::Ready(Some(Ok(frame)))
-            }
-            other => other,
-        }
-    }
-
-    fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
-    }
-
-    fn size_hint(&self) -> hyper::body::SizeHint {
-        self.inner.size_hint()
-    }
 }
 
 async fn build_tls_acceptor_with_reload(
