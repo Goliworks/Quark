@@ -29,6 +29,8 @@ const DEFAULT_KEEPALIVE_TIMEOUT: u64 = 60;
 const DEFAULT_KEEPALIVE_INTERVAL: u64 = 20;
 const DEFAULT_TLS_HANDSHAKE_TIMEOUT: u64 = 10;
 const DEFAULT_HTTP_HEADER_TIMEOUT: u64 = 30;
+const DEFAULT_IDLE_TIMEOUT: u64 = 300;
+const DEFAULT_IDLE_CHECK_INTERVAL: u64 = 20;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
@@ -51,6 +53,8 @@ pub struct Global {
     pub keepalive_interval: u64,
     pub tls_handshake_timeout: u64,
     pub http_header_timeout: u64,
+    pub idle_timeout: u64,
+    pub idle_check_interval: u64,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -275,6 +279,12 @@ impl InternalConfig {
             http_header_timeout: global_config
                 .and_then(|g| g.http_header_timeout)
                 .unwrap_or(DEFAULT_HTTP_HEADER_TIMEOUT),
+            idle_timeout: global_config
+                .and_then(|g| g.idle_timeout)
+                .unwrap_or(DEFAULT_IDLE_TIMEOUT),
+            idle_check_interval: global_config
+                .and_then(|g| g.idle_check_interval)
+                .unwrap_or(DEFAULT_IDLE_CHECK_INTERVAL),
         };
 
         InternalConfig {

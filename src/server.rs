@@ -131,32 +131,38 @@ async fn init_servers(
             let server_handler = Arc::clone(&server_handler);
             let tls_certs = Arc::clone(&tls_certs).clone();
 
-            let https_server_config = HttpsServerConfig {
+            let https_config = HttpServerConfig {
                 port: server.https_port,
                 default_backlog,
-                handshake_timeout: service_config.global.tls_handshake_timeout,
-            };
-
-            let https_server = https_server(
-                https_server_config,
-                tx,
-                tls_certs,
                 max_conns,
                 http,
                 server_handler,
+                idle_timeout: service_config.global.idle_timeout,
+                idle_check_interval: service_config.global.idle_check_interval,
+            };
+
+            let https_server = https_server(
+                https_config,
+                tx,
+                tls_certs,
+                service_config.global.tls_handshake_timeout,
             );
 
             servers.push(Box::pin(https_server));
         }
 
-        // Default http server. (Always enabled)
-        let http_server = http_server(
-            server.port,
+        let http_config = HttpServerConfig {
+            port: server.port,
             default_backlog,
             max_conns,
             http,
             server_handler,
-        );
+            idle_timeout: service_config.global.idle_timeout,
+            idle_check_interval: service_config.global.idle_check_interval,
+        };
+
+        // Default http server. (Always enabled)
+        let http_server = http_server(http_config);
 
         servers.push(Box::pin(http_server));
     }
@@ -257,18 +263,11 @@ impl StreamAcceptor for TlsAcceptorWrapper {
     }
 }
 
-const IDLE_TIMEOUT_SECS: u64 = 300;
-const CHECK_INTERVAL_SECS: u64 = 10;
-
 fn run_server<A: StreamAcceptor>(
-    port: u16,
-    default_backlog: i32,
-    max_conns: Arc<tokio::sync::Semaphore>,
-    http: Arc<Builder<TokioExecutor>>,
-    server_handler: Arc<ServerHandler>,
+    config: HttpServerConfig,
     acceptor: Arc<A>,
 ) -> impl Future<Output = ()> {
-    let listener = build_tcp_listener(port, default_backlog);
+    let listener = build_tcp_listener(config.port, config.default_backlog);
     async move {
         loop {
             let res = listener.accept().await;
@@ -282,9 +281,9 @@ fn run_server<A: StreamAcceptor>(
 
             let client_ip = format_ip(address.ip());
             let acceptor = acceptor.clone();
-            let max_conns = Arc::clone(&max_conns);
-            let server_handler = Arc::clone(&server_handler);
-            let http = http.clone();
+            let max_conns = Arc::clone(&config.max_conns);
+            let server_handler = Arc::clone(&config.server_handler);
+            let http = config.http.clone();
 
             tokio::task::spawn(async move {
                 let protocol = acceptor.protocol().to_string();
@@ -321,7 +320,7 @@ fn run_server<A: StreamAcceptor>(
                 tokio::pin!(conn);
 
                 let mut check_interval =
-                    tokio::time::interval(Duration::from_secs(CHECK_INTERVAL_SECS));
+                    tokio::time::interval(Duration::from_secs(config.idle_check_interval));
                 check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
                 loop {
@@ -340,7 +339,7 @@ fn run_server<A: StreamAcceptor>(
                         _ = check_interval.tick() => {
                             let idle_secs = service.seconds_since_last_activity();
 
-                            if idle_secs >= IDLE_TIMEOUT_SECS {
+                            if idle_secs >= config.idle_timeout {
                                tracing::warn!(
                                     idle_seconds = idle_secs,
                                     "Connection idle timeout, closing connection"
@@ -368,54 +367,34 @@ fn run_server<A: StreamAcceptor>(
     }
 }
 
-struct HttpsServerConfig {
+struct HttpServerConfig {
     port: u16,
     default_backlog: i32,
-    handshake_timeout: u64,
-}
-
-async fn https_server(
-    config: HttpsServerConfig,
-    tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
-    tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     max_conns: Arc<tokio::sync::Semaphore>,
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
+    idle_timeout: u64,
+    idle_check_interval: u64,
+}
+
+async fn https_server(
+    config: HttpServerConfig,
+    tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
+    tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
+    handshake_timeout: u64,
 ) {
     let tls_acceptor = build_tls_acceptor_with_reload(config.port, tx, tls_certs).await;
     let acceptor = Arc::new(TlsAcceptorWrapper {
         acceptor: tls_acceptor,
-        handshake_timeout: config.handshake_timeout,
+        handshake_timeout,
     });
 
-    run_server(
-        config.port,
-        config.default_backlog,
-        max_conns,
-        http,
-        server_handler,
-        acceptor,
-    )
-    .await;
+    run_server(config, acceptor).await;
 }
 
-async fn http_server(
-    port: u16,
-    default_backlog: i32,
-    max_conns: Arc<tokio::sync::Semaphore>,
-    http: Arc<Builder<TokioExecutor>>,
-    server_handler: Arc<ServerHandler>,
-) {
+async fn http_server(config: HttpServerConfig) {
     let acceptor = Arc::new(PlainAcceptor);
-    run_server(
-        port,
-        default_backlog,
-        max_conns,
-        http,
-        server_handler,
-        acceptor,
-    )
-    .await;
+    run_server(config, acceptor).await;
 }
 
 async fn build_tls_acceptor_with_reload(

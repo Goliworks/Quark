@@ -17,6 +17,8 @@ keepalive_timeout = 60     # (Optional) Timeout in seconds for HTTP keep-alive c
 keepalive_interval = 20    # (Optional) Interval in seconds between HTTP keep-alive probes. (default: 20s)
 tls_handshake_timeout = 10 # (Optional) Timeout in seconds for TLS handshake. (default: 10s)
 http_header_timeout = 30   # (Optional) Timeout in seconds for reading HTTP headers. (default: 30s)
+idle_timeout = 300         # (Optional) Timeout in seconds for idle connections. (default: 300s)
+idle_check_interval = 20   # (Optional) Interval in seconds between idle checks. (default: 20s)
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].

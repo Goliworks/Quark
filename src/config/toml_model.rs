@@ -31,6 +31,8 @@ pub struct Global {
     pub keepalive_interval: Option<u64>,
     pub tls_handshake_timeout: Option<u64>,
     pub http_header_timeout: Option<u64>,
+    pub idle_timeout: Option<u64>,
+    pub idle_check_interval: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
