@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
+use dashmap::DashMap;
 use hyper::service::service_fn;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioTimer;
@@ -268,6 +269,9 @@ fn run_server<A: StreamAcceptor>(
     acceptor: Arc<A>,
 ) -> impl Future<Output = ()> {
     let listener = build_tcp_listener(config.port, config.default_backlog);
+    let limiter = Arc::new(
+        ConnectionLimiter::new()
+    );
     async move {
         loop {
             let res = listener.accept().await;
@@ -280,12 +284,32 @@ fn run_server<A: StreamAcceptor>(
             };
 
             let client_ip = format_ip(address.ip());
+            let ip_addr = address.ip();
             let acceptor = acceptor.clone();
+            let limiter = Arc::clone(&limiter);
             let max_conns = Arc::clone(&config.max_conns);
             let server_handler = Arc::clone(&config.server_handler);
             let http = config.http.clone();
 
             tokio::task::spawn(async move {
+
+                let _conn_guard = match limiter.try_acquire(ip_addr) {
+                    Some(guard) => guard,
+                    None => {
+                        tracing::warn!(ip = %ip_addr, 
+                            "Connection limit exceeded");
+                        return;
+                    }
+                };
+
+                let _permit = match max_conns.try_acquire_owned() {
+                    Ok(p) => p,
+                    Err(_) => {
+                        tracing::error!("Too many connection. Connection closed.");
+                        return;
+                    }
+                };
+
                 let protocol = acceptor.protocol().to_string();
                 let service = service_fn(move |req| {
                     let server_handler = Arc::clone(&server_handler);
@@ -299,14 +323,6 @@ fn run_server<A: StreamAcceptor>(
                     async move { server_handler.handle(handler_params).await }
                 });
                 let service = ServerService::new(service);
-
-                let _permit = match max_conns.try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        tracing::error!("Too many connection. Connection closed.");
-                        return;
-                    }
-                };
 
                 let stream = match acceptor.accept(stream).await {
                     Ok(stream) => stream,
@@ -455,6 +471,61 @@ fn build_tcp_listener(port: u16, backlog: i32) -> TcpListener {
     // Create and return the listener.
     info!("Server listening on port {}", port);
     TcpListener::from_std(socket.into()).unwrap()
+}
+
+const MAX_PER_IP: usize = 10;
+
+#[derive(Clone)]
+struct ConnectionLimiter {
+    connections: Arc<DashMap<IpAddr, usize>>,
+}
+
+impl ConnectionLimiter {
+    pub fn new() -> Self {
+        Self {
+            connections: Arc::new(DashMap::new()),
+        }
+    }
+
+    pub fn try_acquire(&self, ip: IpAddr) -> Option<ConnectionGuard> {
+        let mut entry = self.connections.entry(ip).or_insert(0);
+        if *entry >= MAX_PER_IP {
+            tracing::warn!(ip = %ip, current = *entry, "IP connection limit reached");
+            return None;
+        }
+        *entry += 1;
+        tracing::debug!(ip = %ip, entry = *entry, "Connection acquired");
+        Some(ConnectionGuard {
+            ip,
+            limiter: self.clone(),
+        })
+    }
+
+    pub fn release(&self, ip: IpAddr) {
+        if let Some(mut entry) = self.connections.get_mut(&ip) {
+            *entry = entry.saturating_sub(1);
+            let count = *entry;
+            if count == 0 {
+                drop(entry);
+                // use remove_if to avoid potential race conditions.
+                self.connections.remove_if(&ip, |_, count| *count == 0);
+                tracing::debug!(ip = %ip, "Connection removed");
+            } else {
+                tracing::debug!(ip = %ip, remaining = count, "Connection released");
+            }
+        }
+    }
+}
+
+struct ConnectionGuard {
+    ip: IpAddr,
+    limiter: ConnectionLimiter,
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.limiter.release(self.ip);
+    }
 }
 
 static TIME_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
