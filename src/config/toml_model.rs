@@ -33,6 +33,7 @@ pub struct Global {
     pub http_header_timeout: Option<u64>,
     pub idle_timeout: Option<u64>,
     pub idle_check_interval: Option<u64>,
+    pub max_conn_per_ip: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]

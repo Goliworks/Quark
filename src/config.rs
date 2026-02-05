@@ -55,6 +55,7 @@ pub struct Global {
     pub http_header_timeout: u64,
     pub idle_timeout: u64,
     pub idle_check_interval: u64,
+    pub max_conn_per_ip: Option<usize>,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -285,6 +286,7 @@ impl InternalConfig {
             idle_check_interval: global_config
                 .and_then(|g| g.idle_check_interval)
                 .unwrap_or(DEFAULT_IDLE_CHECK_INTERVAL),
+            max_conn_per_ip: global_config.and_then(|g| g.max_conn_per_ip),
         };
 
         InternalConfig {

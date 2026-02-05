@@ -124,6 +124,11 @@ async fn init_servers(
         let server_handler =
             handler::ServerHandler::builder(server_params, lb_config, max_req, client);
 
+        let limiter = service_config
+            .global
+            .max_conn_per_ip
+            .map(|max_conn| Arc::new(ConnectionLimiter::new(max_conn)));
+
         // Declare https server if tls is enabled in the server config.
         if let Some(_tls) = &server.tls {
             // Clone arcs for the next asynvc task.
@@ -131,6 +136,7 @@ async fn init_servers(
             let max_conns = Arc::clone(&max_conns);
             let server_handler = Arc::clone(&server_handler);
             let tls_certs = Arc::clone(&tls_certs).clone();
+            let limiter = limiter.clone();
 
             let https_config = HttpServerConfig {
                 port: server.https_port,
@@ -140,6 +146,7 @@ async fn init_servers(
                 server_handler,
                 idle_timeout: service_config.global.idle_timeout,
                 idle_check_interval: service_config.global.idle_check_interval,
+                limiter,
             };
 
             let https_server = https_server(
@@ -160,6 +167,7 @@ async fn init_servers(
             server_handler,
             idle_timeout: service_config.global.idle_timeout,
             idle_check_interval: service_config.global.idle_check_interval,
+            limiter,
         };
 
         // Default http server. (Always enabled)
@@ -269,9 +277,6 @@ fn run_server<A: StreamAcceptor>(
     acceptor: Arc<A>,
 ) -> impl Future<Output = ()> {
     let listener = build_tcp_listener(config.port, config.default_backlog);
-    let limiter = Arc::new(
-        ConnectionLimiter::new()
-    );
     async move {
         loop {
             let res = listener.accept().await;
@@ -286,20 +291,24 @@ fn run_server<A: StreamAcceptor>(
             let client_ip = format_ip(address.ip());
             let ip_addr = address.ip();
             let acceptor = acceptor.clone();
-            let limiter = Arc::clone(&limiter);
             let max_conns = Arc::clone(&config.max_conns);
             let server_handler = Arc::clone(&config.server_handler);
+            let limiter = config.limiter.clone();
             let http = config.http.clone();
 
             tokio::task::spawn(async move {
-
-                let _conn_guard = match limiter.try_acquire(ip_addr) {
-                    Some(guard) => guard,
-                    None => {
-                        tracing::warn!(ip = %ip_addr, 
-                            "Connection limit exceeded");
-                        return;
+                // Limit ip only if defined in the config file.
+                let _conn_guard = if let Some(ref limiter) = limiter {
+                    match limiter.try_acquire(ip_addr) {
+                        Some(guard) => Some(guard),
+                        None => {
+                            tracing::warn!(ip = %ip_addr,
+                                "Connection limit exceeded");
+                            return;
+                        }
                     }
+                } else {
+                    None
                 };
 
                 let _permit = match max_conns.try_acquire_owned() {
@@ -391,6 +400,7 @@ struct HttpServerConfig {
     server_handler: Arc<ServerHandler>,
     idle_timeout: u64,
     idle_check_interval: u64,
+    limiter: Option<Arc<ConnectionLimiter>>,
 }
 
 async fn https_server(
@@ -473,23 +483,23 @@ fn build_tcp_listener(port: u16, backlog: i32) -> TcpListener {
     TcpListener::from_std(socket.into()).unwrap()
 }
 
-const MAX_PER_IP: usize = 10;
-
 #[derive(Clone)]
 struct ConnectionLimiter {
     connections: Arc<DashMap<IpAddr, usize>>,
+    max_conns: usize,
 }
 
 impl ConnectionLimiter {
-    pub fn new() -> Self {
+    pub fn new(max_conns: usize) -> Self {
         Self {
             connections: Arc::new(DashMap::new()),
+            max_conns,
         }
     }
 
     pub fn try_acquire(&self, ip: IpAddr) -> Option<ConnectionGuard> {
         let mut entry = self.connections.entry(ip).or_insert(0);
-        if *entry >= MAX_PER_IP {
+        if *entry >= self.max_conns {
             tracing::warn!(ip = %ip, current = *entry, "IP connection limit reached");
             return None;
         }
