@@ -216,12 +216,14 @@ fn generate_loadbalancing_config(
 ) -> Arc<load_balancing::LoadBalancerConfig> {
     let mut targets: Vec<&Locations> = Vec::new();
     for (_, server) in servers.iter() {
-        for (_, target) in server.params.targets.iter() {
-            match target {
-                TargetType::Location(location) if location.algo.is_some() => {
-                    targets.push(location);
+        for (_, routes) in server.params.routes.iter() {
+            for route in routes {
+                match &route.target {
+                    TargetType::Location(location) if location.algo.is_some() => {
+                        targets.push(location);
+                    }
+                    _ => (),
                 }
-                _ => (),
             }
         }
     }

@@ -4,7 +4,7 @@ use argh::FromArgs;
 use bincode::{Decode, Encode};
 use hyper::StatusCode;
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -66,13 +66,32 @@ pub struct Server {
     pub tls: Option<Vec<TlsCertificate>>,
 }
 
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum RouteKind {
+    Strict,
+    Path,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum TargetType {
+    Location(Locations),
+    FileServer(FileServer),
+    Redirection(Redirection),
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct ServerRoute {
+    pub path: String,
+    pub target: TargetType,
+    pub kind: RouteKind,
+}
+
 // Domain -> Location
-type ServerParamsTargets = BTreeMap<String, TargetType>;
+type ServerParamsRoutes = HashMap<String, Vec<ServerRoute>>;
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct ServerParams {
-    pub targets: ServerParamsTargets,
-    pub strict_targets: ServerParamsTargets,
+    pub routes: ServerParamsRoutes,
     pub auto_tls: Option<Vec<String>>,
     pub proxy_timeout: u64,
 }
@@ -122,13 +141,6 @@ pub struct ConfigHeadersActions {
     pub del: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
-pub enum TargetType {
-    Location(Locations),
-    FileServer(FileServer),
-    Redirection(Redirection),
-}
-
 #[derive(FromArgs)]
 #[argh(description = "certificates")]
 pub struct Options {
@@ -162,8 +174,7 @@ impl InternalConfig {
                 let https_port = server.https_port.unwrap_or(DEFAULT_PORT_HTTPS);
                 let server = Server {
                     params: ServerParams {
-                        targets: BTreeMap::new(),
-                        strict_targets: BTreeMap::new(),
+                        routes: HashMap::new(),
                         auto_tls: None,
                         proxy_timeout: server.proxy_timeout.unwrap_or(DEFAULT_PROXY_TIMEOUT),
                     },
@@ -179,8 +190,7 @@ impl InternalConfig {
         if !servers.contains_key(MAIN_SERVER_NAME) {
             let server = Server {
                 params: ServerParams {
-                    targets: BTreeMap::new(),
-                    strict_targets: BTreeMap::new(),
+                    routes: HashMap::new(),
                     auto_tls: None,
                     proxy_timeout: DEFAULT_PROXY_TIMEOUT,
                 },
@@ -226,7 +236,7 @@ impl InternalConfig {
 
             manage_server_targets(server, service, &config.loadbalancers, server_headers);
             www_auto_redirection(
-                &mut server.params.targets,
+                &mut server.params.routes,
                 &service.domain,
                 if service.tls.is_some() {
                     https_port
@@ -251,6 +261,11 @@ impl InternalConfig {
                     .auto_tls
                     .get_or_insert_with(Vec::new)
                     .push(tls_domain);
+            }
+
+            // Sort the routes by path length.
+            for route in server.params.routes.values_mut() {
+                route.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
             }
         }
 
@@ -372,11 +387,10 @@ fn manage_server_targets(
             headers::apply_header_actions(location.headers.as_ref(), &mut headers);
 
             // Remove last slash.
-            let (source, strict_mode) = source_and_strict_mode(&location.source);
+            let (source, route_kind) = source_and_route_kind(&location.source);
             // Get all backends info required for load balancing.
             let (backends, algo, weight) = get_backends_config(&location.target, loadbalancers);
 
-            let key = format!("{}{}", service.domain, source);
             let target = TargetType::Location(Locations {
                 id: generate_u32_id(),
                 params: TargetParams {
@@ -387,11 +401,18 @@ fn manage_server_targets(
                 weights: weight,
             });
 
-            if strict_mode {
-                server.params.strict_targets.insert(key, target);
-            } else {
-                server.params.targets.insert(key, target);
-            }
+            let route = ServerRoute {
+                path: source.to_string(),
+                kind: route_kind,
+                target,
+            };
+
+            let routes = server
+                .params
+                .routes
+                .entry(service.domain.clone())
+                .or_default();
+            routes.push(route);
         }
     }
     if let Some(file_server) = &service.file_servers {
@@ -399,8 +420,7 @@ fn manage_server_targets(
             manage_file_servers(
                 fs,
                 service.domain.clone(),
-                &mut server.params.targets,
-                &mut server.params.strict_targets,
+                &mut server.params.routes,
                 &fs_headers,
                 service.headers.as_ref(),
             );
@@ -411,9 +431,8 @@ fn manage_server_targets(
         // Manage redirections.
         for red in redirections {
             // Remove last slash.
-            let (source, strict_mode) = source_and_strict_mode(&red.source);
+            let (source, route_kind) = source_and_route_kind(&red.source);
 
-            let key = format!("{}{}", service.domain, source);
             let target = TargetType::Redirection(Redirection {
                 params: TargetParams {
                     location: red.target.clone(),
@@ -426,11 +445,18 @@ fn manage_server_targets(
                 },
             });
 
-            if strict_mode {
-                server.params.strict_targets.insert(key, target);
-            } else {
-                server.params.targets.insert(key, target);
-            }
+            let route = ServerRoute {
+                path: source.to_string(),
+                kind: route_kind,
+                target,
+            };
+
+            let routes = server
+                .params
+                .routes
+                .entry(service.domain.clone())
+                .or_default();
+            routes.push(route);
         }
     }
 }
@@ -438,12 +464,11 @@ fn manage_server_targets(
 fn manage_file_servers(
     fs: &FileServers,
     domain: String,
-    targets: &mut ServerParamsTargets,
-    strict_targets: &mut ServerParamsTargets,
+    targets: &mut ServerParamsRoutes,
     headers: &ConfigHeaders,
     service_headers: Option<&Headers>,
 ) {
-    let (source, strict_mode) = source_and_strict_mode(&fs.source);
+    let (source, route_kind) = source_and_route_kind(&fs.source);
     let (target, file_name) = get_path_and_file(&fs.target);
     let target_str = target.to_string_lossy().to_string();
     let mut is_fallback_404 = false;
@@ -470,7 +495,6 @@ fn manage_file_servers(
         headers::merge_headers_actions(ha, &mut headers.response);
     }
 
-    let key = format!("{}{}", domain, source);
     let target = TargetType::FileServer(FileServer {
         params: TargetParams {
             location: target_str.clone(),
@@ -481,16 +505,19 @@ fn manage_file_servers(
         forbidden_dir: DEFAULT_FORBIDDEN_DIR,
     });
 
-    if strict_mode {
-        strict_targets.insert(key, target);
-    } else {
-        targets.insert(key, target);
-    }
+    let route = ServerRoute {
+        path: source.to_string(),
+        kind: route_kind,
+        target,
+    };
+
+    let routes = targets.entry(domain.clone()).or_default();
+    routes.push(route);
 
     if let Some(ads) = &fs.authorized_dirs {
         for ad in ads {
-            let (dir, strict_mode, access) = dir_strict_mode_and_access(ad);
-            let key = format!("{}{}{}", domain, source, dir);
+            let (dir, route_kind, access) = dir_strict_mode_and_access(ad);
+            let key = format!("{}{}", source, dir);
             let target = TargetType::FileServer(FileServer {
                 params: TargetParams {
                     location: format!("{}{}", target_str, dir),
@@ -501,11 +528,14 @@ fn manage_file_servers(
                 forbidden_dir: access,
             });
 
-            if strict_mode {
-                strict_targets.insert(key, target);
-            } else {
-                targets.insert(key, target);
-            }
+            let route = ServerRoute {
+                path: key,
+                kind: route_kind,
+                target,
+            };
+
+            let routes = targets.entry(domain.clone()).or_default();
+            routes.push(route);
         }
     }
 }
@@ -561,7 +591,7 @@ fn manage_weights(srv_nbr: usize, weights: &Option<Vec<u32>>) -> Option<Vec<u32>
 }
 
 fn www_auto_redirection(
-    server_targets: &mut ServerParamsTargets,
+    server_targets: &mut ServerParamsRoutes,
     service_domain: &str,
     port: u16,
     tls: bool,
@@ -583,7 +613,7 @@ fn www_auto_redirection(
         domain = service_domain.strip_prefix("www.").unwrap().to_string();
         target_domain = service_domain.to_string();
     }
-    let target = format!(
+    let location_target = format!(
         "http{}://{}{}",
         if tls { "s" } else { "" },
         target_domain,
@@ -594,34 +624,40 @@ fn www_auto_redirection(
         }
     );
 
-    server_targets.insert(
-        domain,
-        TargetType::Redirection(Redirection {
-            params: TargetParams {
-                location: target,
-                headers: ConfigHeaders::default(),
-            },
-            code: StatusCode::MOVED_PERMANENTLY.as_u16(),
-        }),
-    );
+    let target = TargetType::Redirection(Redirection {
+        params: TargetParams {
+            location: location_target,
+            headers: ConfigHeaders::default(),
+        },
+        code: StatusCode::MOVED_PERMANENTLY.as_u16(),
+    });
+
+    let route = ServerRoute {
+        path: "".to_string(),
+        kind: RouteKind::Path,
+        target,
+    };
+
+    let routes = server_targets.entry(domain).or_default();
+    routes.push(route);
 }
 
-fn dir_strict_mode_and_access(path: &str) -> (&str, bool, bool) {
+fn dir_strict_mode_and_access(path: &str) -> (&str, RouteKind, bool) {
     if let Some(p) = path.strip_prefix("!") {
         // forbidden directory.
-        let (source, mode) = source_and_strict_mode(p);
+        let (source, mode) = source_and_route_kind(p);
         (source, mode, true)
     } else {
-        let (source, mode) = source_and_strict_mode(path);
+        let (source, mode) = source_and_route_kind(path);
         (source, mode, false)
     }
 }
 
-fn source_and_strict_mode(source: &str) -> (&str, bool) {
+fn source_and_route_kind(source: &str) -> (&str, RouteKind) {
     if let Some(s) = source.strip_suffix("/*") {
-        (s, false)
+        (s, RouteKind::Path)
     } else {
-        (utils::remove_last_slash(source), true)
+        (utils::remove_last_slash(source), RouteKind::Strict)
     }
 }
 
@@ -724,8 +760,7 @@ mod tests {
     fn server_mock() -> Server {
         Server {
             params: ServerParams {
-                targets: BTreeMap::new(),
-                strict_targets: BTreeMap::new(),
+                routes: HashMap::new(),
                 auto_tls: None,
                 proxy_timeout: DEFAULT_PROXY_TIMEOUT,
             },
@@ -743,8 +778,9 @@ mod tests {
         tls: bool,
     ) {
         let mut server = server_mock();
-        www_auto_redirection(&mut server.params.targets, target_domain, port, tls);
-        let target = server.params.targets.get(source_domain).unwrap();
+        www_auto_redirection(&mut server.params.routes, target_domain, port, tls);
+        let routes = server.params.routes.get(source_domain).unwrap();
+        let target = &routes[0].target;
 
         assert!(
             matches!(target, TargetType::Redirection(_)),

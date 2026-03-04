@@ -9,7 +9,7 @@ use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
 use crate::{
-    config::{ConfigHeaders, ServerParams, TargetType},
+    config::{ConfigHeaders, RouteKind, ServerParams, TargetType},
     http_response, load_balancing,
     server::{serve_file, server_utils::custom_headers},
     utils::{self},
@@ -97,104 +97,92 @@ impl ServerHandler {
             }
         }
 
-        let match_url = format!("{domain}{path}");
+        let domain = domain.to_string();
 
-        // First, check for a strict targets.
-        if let Some(target_type) = &self
-            .params
-            .strict_targets
-            .get(utils::remove_last_slash(&match_url))
-        {
-            return self
-                .strict_match(hp, target_type, authority, source_url)
-                .await;
-        }
+        if let Some(routes) = self.params.routes.get(&domain) {
+            for route in routes {
+                let route_path = route.path.to_string();
 
-        // Else, check for regular targets.
-        match self
-            .params
-            .targets
-            .get(utils::remove_last_slash(&match_url))
-        {
-            // First, check for a strict match.
-            Some(target_type) => {
-                self.strict_match(hp, target_type, authority, source_url)
-                    .await
-            }
-            // If no strict match, check for a match with the path.
-            None => {
-                for (url, target_type) in self.params.targets.iter().rev() {
-                    match target_type {
-                        TargetType::Location(target) => {
-                            if match_url.as_str().starts_with(url.as_str()) {
-                                let new_path = match_url.strip_prefix(url);
-                                let location = self.loadbalancer.balance(
-                                    &target.id,
-                                    &target.params.location,
-                                    &target.algo,
-                                    &hp.client_ip,
-                                );
-                                let uri_path = format!(
-                                    "{}{}",
-                                    utils::remove_last_slash(&location),
-                                    new_path.unwrap()
-                                );
-                                return self
-                                    .proxy_request(
-                                        hp,
-                                        uri_path,
-                                        &target.params.headers,
-                                        authority,
-                                        source_url,
-                                    )
-                                    .await;
-                            }
-                        }
-                        TargetType::FileServer(file_server) => {
-                            if match_url.as_str().starts_with(url.as_str()) {
-                                let new_path = match_url.strip_prefix(url).unwrap();
-                                let location =
-                                    utils::remove_last_slash(&file_server.params.location);
-                                let mut serve_files = serve_file::serve_file(
-                                    location,
-                                    new_path,
-                                    &source_url,
-                                    &file_server.fallback_file,
-                                    file_server.forbidden_dir,
-                                    file_server.is_fallback_404,
-                                )
+                match route.kind {
+                    RouteKind::Strict => {
+                        if path == route_path {
+                            return self
+                                .strict_match(hp, &route.target, authority, source_url)
                                 .await;
-
-                                if let Some(response) = &file_server.params.headers.response {
-                                    custom_headers(&mut serve_files, response);
+                        }
+                    }
+                    RouteKind::Path => {
+                        if path.starts_with(&route_path) {
+                            match &route.target {
+                                TargetType::Location(target) => {
+                                    let new_path = path.strip_prefix(&route_path);
+                                    let location = self.loadbalancer.balance(
+                                        &target.id,
+                                        &target.params.location,
+                                        &target.algo,
+                                        &hp.client_ip,
+                                    );
+                                    let uri_path = format!(
+                                        "{}{}",
+                                        utils::remove_last_slash(&location),
+                                        new_path.unwrap()
+                                    );
+                                    return self
+                                        .proxy_request(
+                                            hp,
+                                            uri_path,
+                                            &target.params.headers,
+                                            authority,
+                                            source_url,
+                                        )
+                                        .await;
                                 }
 
-                                return Ok(serve_files);
-                            }
-                        }
-                        TargetType::Redirection(redirection) => {
-                            if match_url.as_str().starts_with(url.as_str()) {
-                                let new_path = match_url.strip_prefix(url);
-                                let uri_path = format!(
-                                    "{}{}",
-                                    utils::remove_last_slash(&redirection.params.location),
-                                    new_path.unwrap()
-                                );
+                                TargetType::FileServer(file_server) => {
+                                    let new_path = path.strip_prefix(&route_path).unwrap();
+                                    let location =
+                                        utils::remove_last_slash(&file_server.params.location);
+                                    let mut serve_files = serve_file::serve_file(
+                                        location,
+                                        new_path,
+                                        &source_url,
+                                        &file_server.fallback_file,
+                                        file_server.forbidden_dir,
+                                        file_server.is_fallback_404,
+                                    )
+                                    .await;
 
-                                return Ok(Response::builder()
-                                    .status(redirection.code)
-                                    .header("Location", uri_path)
-                                    .body(ProxyHandlerBody::Empty)
-                                    .unwrap());
+                                    if let Some(response) = &file_server.params.headers.response {
+                                        custom_headers(&mut serve_files, response);
+                                    }
+
+                                    return Ok(serve_files);
+                                }
+
+                                TargetType::Redirection(redirection) => {
+                                    let new_path = path.strip_prefix(&route_path);
+                                    let uri_path = format!(
+                                        "{}{}",
+                                        utils::remove_last_slash(&redirection.params.location),
+                                        new_path.unwrap()
+                                    );
+
+                                    return Ok(Response::builder()
+                                        .status(redirection.code)
+                                        .header("Location", uri_path)
+                                        .body(ProxyHandlerBody::Empty)
+                                        .unwrap());
+                                }
                             }
                         }
                     }
                 }
-                // If no match, return a 500 internal error.
-                tracing::error!("No match for {}", &source_url);
-                return Ok(http_response::internal_server_error());
             }
-        }
+        };
+
+        // If no match, return a 500 internal error.
+        tracing::error!("No match for {}", &source_url);
+        Ok(http_response::internal_server_error())
     }
 
     async fn strict_match(
