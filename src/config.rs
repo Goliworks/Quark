@@ -535,7 +535,10 @@ fn manage_file_servers(
             };
 
             let routes = targets.entry(domain.clone()).or_default();
-            routes.push(route);
+            match routes.iter().position(|r| r.path == route.path) {
+                Some(pos) => routes[pos] = route,
+                None => routes.push(route),
+            }
         }
     }
 }
