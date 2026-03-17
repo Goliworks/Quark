@@ -121,10 +121,9 @@ impl ServerHandler {
         }
 
         let domain = domain.to_string();
-        let path = utils::remove_last_slash(&path);
         let client_ip = hp.client_ip.clone();
 
-        match self.resolve(&domain, path, &client_ip) {
+        match self.resolve(&domain, &path, &client_ip) {
             Some(ResolvedTarget::Proxy { uri, headers }) => {
                 self.proxy_request(hp, uri, headers, authority, source_url)
                     .await
@@ -177,7 +176,7 @@ impl ServerHandler {
         for route in routes {
             match route.kind {
                 RouteKind::Strict => {
-                    if path == route.path {
+                    if utils::remove_last_slash(path) == route.path {
                         return Some(self.build_resolved(&route.target, "", client_ip));
                     }
                 }
@@ -302,6 +301,27 @@ impl ServerHandler {
             // It's the data from the targeted server.
             Ok(res) => {
                 let mut res = res.map(ProxyHandlerBody::Incoming);
+
+                // If the response is a redirection, rewrite the location.
+                // It usually happens when the redirection is relative.
+                // As an example, when the proying target is a directory that
+                // rewrite the URL with a slash.
+                if res.status().is_redirection() {
+                    let new_location = res
+                        .headers()
+                        .get("location")
+                        .and_then(|l| l.to_str().ok())
+                        .filter(|l| l.starts_with('/'))
+                        .and_then(|l| rewrite_redirect(l, &source_url, &dest_url));
+
+                    if let Some(new_location) = new_location {
+                        res.headers_mut().insert(
+                            HeaderName::from_static("location"),
+                            HeaderValue::from_str(&new_location).unwrap(),
+                        );
+                    }
+                }
+
                 // Add or remove headers defined in the config file.
                 if let Some(response) = &headers.response {
                     custom_headers(&mut res, response);
@@ -316,6 +336,20 @@ impl ServerHandler {
             }
         }
     }
+}
+
+fn rewrite_redirect(location: &str, source_url: &str, dest_url: &str) -> Option<String> {
+    let source_uri: hyper::Uri = source_url.parse().ok()?;
+    let dest_uri: hyper::Uri = dest_url.parse().ok()?;
+
+    let dest_path = dest_uri.path();
+    let source_path = source_uri.path();
+
+    let sub_path = location.strip_prefix(dest_path)?;
+
+    let new_location = format!("{}{}", utils::remove_last_slash(source_path), sub_path);
+
+    Some(new_location)
 }
 
 fn get_authority_and_domain(
