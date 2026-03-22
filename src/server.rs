@@ -139,8 +139,6 @@ async fn init_servers(
             let limiter = limiter.clone();
 
             let https_config = HttpServerConfig {
-                port: server.https_port,
-                default_backlog,
                 max_conns,
                 http,
                 server_handler,
@@ -148,20 +146,20 @@ async fn init_servers(
                 idle_check_interval: service_config.global.idle_check_interval,
                 limiter,
             };
-
+            let listener = build_tcp_listener(server.https_port, default_backlog);
             let https_server = https_server(
                 https_config,
                 tx,
                 tls_certs,
                 service_config.global.tls_handshake_timeout,
+                server.https_port,
+                listener,
             );
 
             servers.push(Box::pin(https_server));
         }
 
         let http_config = HttpServerConfig {
-            port: server.port,
-            default_backlog,
             max_conns,
             http,
             server_handler,
@@ -169,9 +167,9 @@ async fn init_servers(
             idle_check_interval: service_config.global.idle_check_interval,
             limiter,
         };
-
+        let listener = build_tcp_listener(server.port, default_backlog);
         // Default http server. (Always enabled)
-        let http_server = http_server(http_config);
+        let http_server = http_server(http_config, listener);
 
         servers.push(Box::pin(http_server));
     }
@@ -274,129 +272,125 @@ impl StreamAcceptor for TlsAcceptorWrapper {
     }
 }
 
-fn run_server<A: StreamAcceptor>(
+async fn run_server<A: StreamAcceptor>(
     config: HttpServerConfig,
+    listener: TcpListener,
     acceptor: Arc<A>,
-) -> impl Future<Output = ()> {
-    let listener = build_tcp_listener(config.port, config.default_backlog);
-    async move {
-        loop {
-            let res = listener.accept().await;
-            let (stream, address) = match res {
-                Ok(res) => res,
-                Err(err) => {
-                    tracing::error!("failed to accept connection: {err:#}");
-                    continue;
+) {
+    loop {
+        let res = listener.accept().await;
+        let (stream, address) = match res {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("failed to accept connection: {err:#}");
+                continue;
+            }
+        };
+
+        let client_ip = format_ip(address.ip());
+        let ip_addr = address.ip();
+        let acceptor = acceptor.clone();
+        let max_conns = Arc::clone(&config.max_conns);
+        let server_handler = Arc::clone(&config.server_handler);
+        let limiter = config.limiter.clone();
+        let http = config.http.clone();
+
+        tokio::task::spawn(async move {
+            // Limit ip only if defined in the config file.
+            let _conn_guard = if let Some(ref limiter) = limiter {
+                match limiter.try_acquire(ip_addr) {
+                    Some(guard) => Some(guard),
+                    None => {
+                        tracing::warn!(ip = %ip_addr,
+                                "Connection limit exceeded");
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
+
+            let _permit = match max_conns.try_acquire_owned() {
+                Ok(p) => p,
+                Err(_) => {
+                    tracing::error!("Too many connection. Connection closed.");
+                    return;
                 }
             };
 
-            let client_ip = format_ip(address.ip());
-            let ip_addr = address.ip();
-            let acceptor = acceptor.clone();
-            let max_conns = Arc::clone(&config.max_conns);
-            let server_handler = Arc::clone(&config.server_handler);
-            let limiter = config.limiter.clone();
-            let http = config.http.clone();
+            let protocol = acceptor.protocol().to_string();
+            let service = service_fn(move |req| {
+                let server_handler = Arc::clone(&server_handler);
+                let client_ip = client_ip.clone();
+                let protocol = protocol.clone();
+                let handler_params = handler::HandlerParams {
+                    req,
+                    client_ip,
+                    scheme: protocol,
+                };
+                async move { server_handler.handle(handler_params).await }
+            });
+            let service = ServerService::new(service);
 
-            tokio::task::spawn(async move {
-                // Limit ip only if defined in the config file.
-                let _conn_guard = if let Some(ref limiter) = limiter {
-                    match limiter.try_acquire(ip_addr) {
-                        Some(guard) => Some(guard),
-                        None => {
-                            tracing::warn!(ip = %ip_addr,
-                                "Connection limit exceeded");
-                            return;
+            let stream = match acceptor.accept(stream).await {
+                Ok(stream) => stream,
+                Err(err) => {
+                    tracing::error!("failed to perform TLS handshake: {err:#}");
+                    return;
+                }
+            };
+
+            let conn = http.serve_connection(TokioIo::new(stream), service.clone());
+            tokio::pin!(conn);
+
+            let mut check_interval =
+                tokio::time::interval(Duration::from_secs(config.idle_check_interval));
+            check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    res = conn.as_mut() => {
+                        match res {
+                            Ok(_) => {
+                                tracing::info!("Connection closed");
+                            },
+                            Err(err) => {
+                                tracing::error!("failed to serve connection: {err:#}");
+                            }
                         }
+                        break;
                     }
-                } else {
-                    None
-                };
+                    _ = check_interval.tick() => {
+                        let idle_secs = service.seconds_since_last_activity();
 
-                let _permit = match max_conns.try_acquire_owned() {
-                    Ok(p) => p,
-                    Err(_) => {
-                        tracing::error!("Too many connection. Connection closed.");
-                        return;
-                    }
-                };
+                        if idle_secs >= config.idle_timeout {
+                           tracing::warn!(
+                                idle_seconds = idle_secs,
+                                "Connection idle timeout, closing connection"
+                           );
 
-                let protocol = acceptor.protocol().to_string();
-                let service = service_fn(move |req| {
-                    let server_handler = Arc::clone(&server_handler);
-                    let client_ip = client_ip.clone();
-                    let protocol = protocol.clone();
-                    let handler_params = handler::HandlerParams {
-                        req,
-                        client_ip,
-                        scheme: protocol,
-                    };
-                    async move { server_handler.handle(handler_params).await }
-                });
-                let service = ServerService::new(service);
-
-                let stream = match acceptor.accept(stream).await {
-                    Ok(stream) => stream,
-                    Err(err) => {
-                        tracing::error!("failed to perform TLS handshake: {err:#}");
-                        return;
-                    }
-                };
-
-                let conn = http.serve_connection(TokioIo::new(stream), service.clone());
-                tokio::pin!(conn);
-
-                let mut check_interval =
-                    tokio::time::interval(Duration::from_secs(config.idle_check_interval));
-                check_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-                loop {
-                    tokio::select! {
-                        res = conn.as_mut() => {
-                            match res {
-                                Ok(_) => {
-                                    tracing::info!("Connection closed");
-                                },
-                                Err(err) => {
-                                    tracing::error!("failed to serve connection: {err:#}");
-                                }
+                            conn.as_mut().graceful_shutdown();
+                            if tokio::time::timeout(
+                                Duration::from_secs(5),
+                                conn.as_mut()
+                            ).await.is_err() {
+                                tracing::warn!("Connection shutdown timeout");
                             }
                             break;
-                        }
-                        _ = check_interval.tick() => {
-                            let idle_secs = service.seconds_since_last_activity();
-
-                            if idle_secs >= config.idle_timeout {
-                               tracing::warn!(
-                                    idle_seconds = idle_secs,
-                                    "Connection idle timeout, closing connection"
-                               );
-
-                                conn.as_mut().graceful_shutdown();
-                                if tokio::time::timeout(
-                                    Duration::from_secs(5),
-                                    conn.as_mut()
-                                ).await.is_err() {
-                                    tracing::warn!("Connection shutdown timeout");
-                                }
-                                break;
-                            } else {
-                                tracing::debug!(
-                                    idle_seconds = idle_secs,
-                                    "Connection idle"
-                                );
-                            }
+                        } else {
+                            tracing::debug!(
+                                idle_seconds = idle_secs,
+                                "Connection idle"
+                            );
                         }
                     }
                 }
-            });
-        }
+            }
+        });
     }
 }
 
 struct HttpServerConfig {
-    port: u16,
-    default_backlog: i32,
     max_conns: Arc<tokio::sync::Semaphore>,
     http: Arc<Builder<TokioExecutor>>,
     server_handler: Arc<ServerHandler>,
@@ -410,19 +404,21 @@ async fn https_server(
     tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
     tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     handshake_timeout: u64,
+    port: u16,
+    listener: TcpListener,
 ) {
-    let tls_acceptor = build_tls_acceptor_with_reload(config.port, tx, tls_certs).await;
+    let tls_acceptor = build_tls_acceptor_with_reload(port, tx, tls_certs).await;
     let acceptor = Arc::new(TlsAcceptorWrapper {
         acceptor: tls_acceptor,
         handshake_timeout,
     });
 
-    run_server(config, acceptor).await;
+    run_server(config, listener, acceptor).await;
 }
 
-async fn http_server(config: HttpServerConfig) {
+async fn http_server(config: HttpServerConfig, listener: TcpListener) {
     let acceptor = Arc::new(PlainAcceptor);
-    run_server(config, acceptor).await;
+    run_server(config, listener, acceptor).await;
 }
 
 async fn build_tls_acceptor_with_reload(
