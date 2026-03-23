@@ -25,9 +25,10 @@ pub struct ServerService<S> {
 
 impl<S> ServerService<S> {
     pub fn new(inner: S) -> Self {
+        let now = get_current_time();
         Self {
             inner,
-            last_activity: Arc::new(AtomicU64::new(0)),
+            last_activity: Arc::new(AtomicU64::new(now)),
         }
     }
 
