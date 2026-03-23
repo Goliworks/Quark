@@ -4,6 +4,7 @@ pub mod server_utils;
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::io;
 use std::net::{IpAddr, Ipv6Addr};
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
@@ -146,7 +147,13 @@ async fn init_servers(
                 idle_check_interval: service_config.global.idle_check_interval,
                 limiter,
             };
-            let listener = build_tcp_listener(server.https_port, default_backlog);
+
+            let listener =
+                build_tcp_listener(server.https_port, default_backlog).map_err(|err| {
+                    tracing::error!("failed to create https listener: {err:#}");
+                    err
+                })?;
+
             let https_server = https_server(
                 https_config,
                 tx,
@@ -167,7 +174,11 @@ async fn init_servers(
             idle_check_interval: service_config.global.idle_check_interval,
             limiter,
         };
-        let listener = build_tcp_listener(server.port, default_backlog);
+
+        let listener = build_tcp_listener(server.port, default_backlog).map_err(|err| {
+            tracing::error!("failed to create http listener: {err:#}");
+            err
+        })?;
         // Default http server. (Always enabled)
         let http_server = http_server(http_config, listener);
 
@@ -462,23 +473,23 @@ async fn build_tls_acceptor_with_reload(
     TlsAcceptor::from(Arc::new(server_config))
 }
 
-fn build_tcp_listener(port: u16, backlog: i32) -> TcpListener {
+fn build_tcp_listener(port: u16, backlog: i32) -> io::Result<TcpListener> {
     // Build TCP Socket and Socket Address.
-    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))?;
     let socket_addr: SocketAddr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     // Allow IPv4 connections.
-    socket.set_only_v6(false).unwrap();
+    socket.set_only_v6(false)?;
     // Allow reuse of the address.
-    socket.set_reuse_address(true).unwrap();
+    socket.set_reuse_address(true)?;
     // Define that the socket is non-blocking. Otherwise tokio can't accept it.
-    socket.set_nonblocking(true).unwrap();
+    socket.set_nonblocking(true)?;
     // Bind the socket to the address.
-    socket.bind(&socket_addr.into()).unwrap();
+    socket.bind(&socket_addr.into())?;
     // Define the backlog.
-    socket.listen(backlog).unwrap();
+    socket.listen(backlog)?;
     // Create and return the listener.
     info!("Server listening on port {}", port);
-    TcpListener::from_std(socket.into()).unwrap()
+    TcpListener::from_std(socket.into())
 }
 
 #[derive(Clone)]
