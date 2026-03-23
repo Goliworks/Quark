@@ -6,17 +6,28 @@ QUARK_BIN="quark"
 QUARK_DEFAULT_UID=635
 MAX_UID=999
 QUARK_BIN_DESTINATION="/usr/sbin"
-SOCKET_PATH="/run/quark"
 CONFIG_PATH="/etc/quark"
 CONFIG_FILE="config.toml"
 CONFIG_FILE_EXAMPLE="config.example.toml"
-SERVICE_FILE="quark.service"
-SERVICE_DESTINATION="/etc/systemd/system"
 NOSTART_PARAM="$1" #no-start or nothing;
 YN_ERROR_MSG="\e[33mPlease answer yes(y) or no(n).\e[0m"
 UPDATING=false
 CURRENT_DIR=$(pwd)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+# Platform-specific variables
+if [ "$PLATFORM" = "freebsd" ]; then
+  ROOT_GROUP="wheel"
+  SERVICE_FILE="quark"
+  SERVICE_DESTINATION="/usr/local/etc/rc.d"
+  SOCKET_PATH="/var/run/quark"
+else
+  ROOT_GROUP="root"
+  SERVICE_FILE="quark.service"
+  SERVICE_DESTINATION="/etc/systemd/system"
+  SOCKET_PATH="/run/quark"
+fi
 
 cd "$SCRIPT_DIR" || exit 1
 
@@ -52,7 +63,11 @@ done
 
 # Create user.
 if ! id "$QUARK_USER" >/dev/null 2>&1; then
-  useradd -r -s "$NOLOGIN_SHELL" -u "$quark_uid" "$QUARK_USER"
+  if [ "$PLATFORM" = "freebsd" ]; then
+    pw useradd "$QUARK_USER" -u "$quark_uid" -s "$NOLOGIN_SHELL" -d /nonexistent
+  else
+    useradd -r -s "$NOLOGIN_SHELL" -u "$quark_uid" "$QUARK_USER"
+  fi
   echo "User $QUARK_USER created with UID $quark_uid"
   echo "Using nologin shell : $NOLOGIN_SHELL"
 fi
@@ -65,7 +80,15 @@ if [ ! -d "$SOCKET_PATH" ]; then
 fi
 
 # Check a quark service is already active.
-if systemctl is-active --quiet quark; then
+is_quark_running() {
+  if [ "$PLATFORM" = "freebsd" ]; then
+    service quark status 2>/dev/null | grep -q "is running"
+  else
+    systemctl is-active --quiet quark
+  fi
+}
+
+if is_quark_running; then
   echo "\e[33mThe Quark service is already running.\e[0m"
   echo "To proceed with the installation, this script will temporarily stop the service."
   echo "Once the setup is complete, the service will be restarted automatically."
@@ -75,9 +98,13 @@ if systemctl is-active --quiet quark; then
     case $yn in
     [Yy]*)
       echo "Stopping the Quark service"
-      systemctl stop quark
+      if [ "$PLATFORM" = "freebsd" ]; then
+        service quark stop
+      else
+        systemctl stop quark
+      fi
       # check if the service is stopped before continuing
-      while systemctl is-active --quiet quark; do
+      while is_quark_running; do
         sleep 1
       done
       echo "The Quark service has been stopped"
@@ -99,7 +126,7 @@ if [ -f "$QUARK_BIN" ]; then
   fi
 
   cp "$QUARK_BIN" "$QUARK_BIN_DESTINATION/"
-  chown root:root "$QUARK_BIN_DESTINATION/$QUARK_BIN"
+  chown root:$ROOT_GROUP "$QUARK_BIN_DESTINATION/$QUARK_BIN"
 
   if $UPDATING; then
     printf "\e[33m'$QUARK_BIN' bin has replaced the previous one in $QUARK_BIN_DESTINATION.\e[0m\n"
@@ -115,14 +142,14 @@ fi
 # Create configuration directory.
 if [ ! -d "$CONFIG_PATH" ]; then
   mkdir -p "$CONFIG_PATH"
-  chown root:root "$CONFIG_PATH"
+  chown root:$ROOT_GROUP "$CONFIG_PATH"
 fi
 
 # Create default configuration file.
 if [ ! -f "$CONFIG_PATH/$CONFIG_FILE" ]; then
   touch "$CONFIG_PATH/$CONFIG_FILE"
   echo "# Configuration file for Quark" >"$CONFIG_PATH/$CONFIG_FILE"
-  chown root:root "$CONFIG_PATH/$CONFIG_FILE"
+  chown root:$ROOT_GROUP "$CONFIG_PATH/$CONFIG_FILE"
   chmod 600 "$CONFIG_PATH/$CONFIG_FILE"
   echo "Configuration file created"
 fi
@@ -130,21 +157,33 @@ fi
 # Example config file
 if [ -f "$CONFIG_FILE_EXAMPLE" ]; then
   cp "$CONFIG_FILE_EXAMPLE" "$CONFIG_PATH/"
-  chown root:root "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
+  chown root:$ROOT_GROUP "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
   chmod 600 "$CONFIG_PATH/$CONFIG_FILE_EXAMPLE"
   echo "Example configuration file created"
 fi
 
 # Create systemd service
-cp "$SERVICE_FILE" "$SERVICE_DESTINATION/"
-chown root:root "$SERVICE_DESTINATION/$SERVICE_FILE"
-chmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
-systemctl daemon-reload
-systemctl enable quark
-if [ "$NOSTART_PARAM" != "no-start" ]; then
-  echo "Starting the Quark service"
-  systemctl restart quark
-  echo "The Quark service has been started"
+cp "service/$SERVICE_FILE" "$SERVICE_DESTINATION/"
+
+if [ "$PLATFORM" = "freebsd" ]; then
+  chmod 755 "$SERVICE_DESTINATION/$SERVICE_FILE"
+  chown root:wheel "$SERVICE_DESTINATION/$SERVICE_FILE"
+  sysrc quark_enable="YES"
+  if [ "$NOSTART_PARAM" != "no-start" ]; then
+    echo "Starting the Quark service"
+    service quark start
+    echo "The Quark service has been started"
+  fi
+else
+  chown root:root "$SERVICE_DESTINATION/$SERVICE_FILE"
+  chmod 644 "$SERVICE_DESTINATION/$SERVICE_FILE"
+  systemctl daemon-reload
+  systemctl enable quark
+  if [ "$NOSTART_PARAM" != "no-start" ]; then
+    echo "Starting the Quark service"
+    systemctl restart quark
+    echo "The Quark service has been started"
+  fi
 fi
 
 # Finish

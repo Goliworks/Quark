@@ -2,13 +2,14 @@
 set -e
 
 TMP_PACKAGE_DIR="tmp_package"
-DEFAULT_TARGET="x86_64"  # or aarch64
-DEFAULT_LIBC="musl"      # or gnu
-DEFAULT_COMPILER="cargo" # or cross
+DEFAULT_TARGET="x86_64"                                   # x86_64 or aarch64
+DEFAULT_LIBC="musl"                                       # musl or gnu (only for linux)
+DEFAULT_COMPILER="cargo"                                  # cargo or cross
+DEFAULT_PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]') # linux or freebsd
 BIN_NAME="quark"
 CURRENT_DIR=$(pwd)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-USAGE_EXAMPLE="Usage : $0 [--target=x86_64|aarch64] [--libc=musl|gnu] [--compiler=cargo|cross]"
+USAGE_EXAMPLE="Usage : $0 [--platform=linux|freebsd] [--target=x86_64|aarch64] [--libc=musl|gnu] [--compiler=cargo|cross]"
 
 cd "$SCRIPT_DIR/.." || exit 1
 
@@ -19,6 +20,9 @@ compiler=$DEFAULT_COMPILER
 # Parse arguments
 for arg in "$@"; do
   case "$arg" in
+  --platform=*)
+    platform="${arg#*=}"
+    ;;
   --target=*)
     target="${arg#*=}"
     ;;
@@ -36,7 +40,14 @@ for arg in "$@"; do
   esac
 done
 
-FULL_TARGET="$target-unknown-linux-$libc" # example : x86_64-unknown-linux-gnu
+# Set platform (linux or freebsd)
+platform="${platform:-$DEFAULT_PLATFORM}"
+if [ "$platform" = "freebsd" ]; then
+  FULL_TARGET="$target-unknown-freebsd"
+else
+  FULL_TARGET="$target-unknown-linux-$libc"
+fi
+
 RELEASE_PATH="target/$FULL_TARGET/release"
 
 # Get version from Cargo.toml
@@ -50,7 +61,7 @@ VERSION=$(awk '
   }
 ' Cargo.toml)
 
-PACKAGE_SUFFIX="$target-linux"
+PACKAGE_SUFFIX="$target-$platform"
 
 # Build Quark with cargo.
 printf "\e[33mBuilding Quark\e[0m\n"

@@ -10,7 +10,13 @@ use tokio::{
 };
 
 const QUARK_SOCKET_NAME: &str = "quark.sock";
+
+#[cfg(target_os = "freebsd")]
+const QUARK_SOCKET_PATH: &str = "/var/run/quark/";
+
+#[cfg(not(target_os = "freebsd"))]
 const QUARK_SOCKET_PATH: &str = "/run/quark/";
+
 const QUARK_TMP_SOCKET_PATH: &str = "/tmp/";
 
 pub fn get_socket_path() -> String {
