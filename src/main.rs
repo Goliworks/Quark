@@ -158,14 +158,15 @@ fn add_path_to_watcher(target: PathBuf, port: u16, list: &mut HashMap<u16, Vec<P
 }
 
 fn check_sigterm(child_id: i32) {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+
     tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).unwrap();
         sigterm.recv().await;
         println!("[Main Process] Received SIGTERM, exiting");
-        let _ = std::fs::remove_file(ipc::get_socket_path());
-        let _ = std::process::Command::new("kill")
-            .args(["-TERM", &child_id.to_string()])
-            .status();
+        std::fs::remove_file(ipc::get_socket_path()).ok();
+        kill(Pid::from_raw(child_id), Signal::SIGTERM).ok();
         std::process::exit(0);
     });
 }
