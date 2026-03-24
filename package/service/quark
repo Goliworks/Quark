@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # PROVIDE: quark
-# REQUIRE: NETWORKING
+# REQUIRE: DAEMON
 # KEYWORD: shutdown
 
 . /etc/rc.subr
@@ -10,9 +10,11 @@ name="quark"
 rcvar="quark_enable"
 desc="Quark Reverse Proxy"
 
-command="/usr/sbin/daemon"
-command_args="-r -P /var/run/${name}.pid -p /var/run/${name}.child.pid /usr/sbin/quark"
 pidfile="/var/run/${name}.pid"
+child_pidfile="/var/run/${name}.child.pid"
+
+command="/usr/sbin/daemon"
+command_args="-r -R 5 -P ${pidfile} -p ${child_pidfile} /usr/local/sbin/quark"
 
 load_rc_config $name
 run_rc_command "$1"

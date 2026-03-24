@@ -17,6 +17,7 @@ use config::tls::{self, IpcCerts};
 use config::{InternalConfig, Options};
 
 use nix::unistd::{getuid, User};
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::Mutex;
 use utils::QUARK_USER_AND_GROUP;
 
@@ -44,6 +45,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut child = std::process::Command::new(std::env::current_exe()?)
         .args(child_args)
         .spawn()?;
+
+    // Check for SIGTERM.
+    let child_id = child.id() as i32;
+    check_sigterm(child_id);
 
     // Run the main process.
     main_process().await?;
@@ -150,4 +155,17 @@ fn add_path_to_watcher(target: PathBuf, port: u16, list: &mut HashMap<u16, Vec<P
     if !paths_to_watch.contains(&pathbuf) {
         paths_to_watch.push(pathbuf);
     }
+}
+
+fn check_sigterm(child_id: i32) {
+    tokio::spawn(async move {
+        let mut sigterm = signal(SignalKind::terminate()).unwrap();
+        sigterm.recv().await;
+        println!("[Main Process] Received SIGTERM, exiting");
+        let _ = std::fs::remove_file(ipc::get_socket_path());
+        let _ = std::process::Command::new("kill")
+            .args(["-TERM", &child_id.to_string()])
+            .status();
+        std::process::exit(0);
+    });
 }

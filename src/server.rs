@@ -24,6 +24,7 @@ use server_utils::welcome_server;
 use socket2::{Domain, Protocol, Socket, Type};
 use tokio::net::TcpListener;
 
+use tokio::signal::unix::{signal, SignalKind};
 use tokio_rustls::TlsAcceptor;
 use tracing::info;
 
@@ -72,6 +73,8 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = argh::from_env();
     // Init logs. Declare a var to keep the guard alive in this scope.
     let _guard = logs::start_logs(options.logs);
+
+    check_sigterm();
 
     update_cached_time_worker();
 
@@ -399,6 +402,15 @@ async fn run_server<A: StreamAcceptor>(
             }
         });
     }
+}
+
+fn check_sigterm() {
+    tokio::spawn(async move {
+        let mut sigterm = signal(SignalKind::terminate()).unwrap();
+        sigterm.recv().await;
+        tracing::info!("[Child Process] Received SIGTERM, exiting");
+        std::process::exit(0);
+    });
 }
 
 struct HttpServerConfig {

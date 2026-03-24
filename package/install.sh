@@ -5,7 +5,6 @@ QUARK_USER="quark"
 QUARK_BIN="quark"
 QUARK_DEFAULT_UID=635
 MAX_UID=999
-QUARK_BIN_DESTINATION="/usr/sbin"
 CONFIG_PATH="/etc/quark"
 CONFIG_FILE="config.toml"
 CONFIG_FILE_EXAMPLE="config.example.toml"
@@ -21,11 +20,13 @@ if [ "$PLATFORM" = "freebsd" ]; then
   ROOT_GROUP="wheel"
   SERVICE_FILE="quark"
   SERVICE_DESTINATION="/usr/local/etc/rc.d"
+  QUARK_BIN_DESTINATION="/usr/local/sbin"
   SOCKET_PATH="/var/run/quark"
 else
   ROOT_GROUP="root"
   SERVICE_FILE="quark.service"
   SERVICE_DESTINATION="/etc/systemd/system"
+  QUARK_BIN_DESTINATION="/usr/sbin"
   SOCKET_PATH="/run/quark"
 fi
 
