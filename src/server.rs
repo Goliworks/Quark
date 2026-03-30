@@ -533,18 +533,16 @@ impl ConnectionLimiter {
     }
 
     pub fn release(&self, ip: IpAddr) {
-        if let Some(mut entry) = self.connections.get_mut(&ip) {
-            *entry = entry.saturating_sub(1);
-            let count = *entry;
-            if count == 0 {
-                drop(entry);
-                // use remove_if to avoid potential race conditions.
-                self.connections.remove_if(&ip, |_, count| *count == 0);
+        self.connections.remove_if_mut(&ip, |_, count| {
+            if *count <= 1 {
                 tracing::debug!(ip = %ip, "Connection removed");
+                true
             } else {
-                tracing::debug!(ip = %ip, remaining = count, "Connection released");
+                *count -= 1;
+                tracing::debug!(ip = %ip, remaining = *count, "Connection released");
+                false
             }
-        }
+        });
     }
 }
 
