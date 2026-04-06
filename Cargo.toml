@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3.19", default-features = false, features = 
 ] }
 tracing-appender = "0.2.3"
 nix = { version = "0.31.2", features = ["user", "signal", "process"] }
-bincode = "2.0.1"
+bincode = "=2.0.1"
 twox-hash = { version = "2.1.1", features = ["xxhash3_64"] }
 time = "0.3.41"
 pin-project-lite = "0.2.16"
