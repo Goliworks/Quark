@@ -99,7 +99,13 @@ mkdir -p dist
 
 PACKAGE_PATH="dist/$PACKAGE_NAME.tar.gz"
 
+# Remove platform specific files
 cd "$TMP_PACKAGE_DIR"
+if [ "$platform" = "freebsd" ]; then
+  rm -f "$PACKAGE_NAME/service/quark.service"
+else
+  rm -f "$PACKAGE_NAME/service/quark"
+fi
 tar -czvf "../$PACKAGE_PATH" "$PACKAGE_NAME"
 cd ..
 rm -rf "$TMP_PACKAGE_DIR"
