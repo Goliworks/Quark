@@ -517,10 +517,10 @@ fn manage_file_servers(
     if let Some(ads) = &fs.authorized_dirs {
         for ad in ads {
             let (dir, route_kind, access) = dir_strict_mode_and_access(ad);
-            let key = format!("{}{}", source, dir);
+            let key = format!("{source}{dir}");
             let target = TargetType::FileServer(FileServer {
                 params: TargetParams {
-                    location: format!("{}{}", target_str, dir),
+                    location: format!("{target_str}{dir}"),
                     headers: headers.clone(),
                 },
                 fallback_file: file_path.clone(),
@@ -609,7 +609,7 @@ fn www_auto_redirection(
     // If the configured domain doesn't start with www, redirect every request
     // that starts with www to the configured domain.
     if !service_domain.starts_with("www.") {
-        domain = format!("www.{}", service_domain);
+        domain = format!("www.{service_domain}");
         target_domain = service_domain.to_string();
     // Otherwise, redirect every request that doesn't start with www to www.domain.
     } else {

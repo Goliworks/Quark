@@ -36,7 +36,7 @@ impl LoadBalancerConfig {
                     if let Some(weights) = &target.weights {
                         let mut weights_indices = vec![];
                         for (i, &weight) in weights.iter().enumerate() {
-                            weights_indices.extend(std::iter::repeat(i).take(weight as usize));
+                            weights_indices.extend(std::iter::repeat_n(i, weight as usize));
                         }
                         rr_config.weights_indices = Some(weights_indices);
                     }

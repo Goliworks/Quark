@@ -46,10 +46,7 @@ impl hyper::body::Body for ProxyHandlerBody {
                 Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
                 Poll::Ready(Some(Err(err))) => {
                     eprintln!("Error: {err}");
-                    Poll::Ready(Some(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        err,
-                    ))))
+                    Poll::Ready(Some(Err(std::io::Error::other(err))))
                 }
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
