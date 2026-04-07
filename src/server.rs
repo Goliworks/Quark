@@ -571,3 +571,131 @@ fn update_cached_time_worker() {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        sync::Arc,
+        time::Duration,
+    };
+
+    use crate::server::ConnectionLimiter;
+
+    #[test]
+    fn connection_limiter_explicit_release() {
+        let limiter = ConnectionLimiter::new(1);
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let _g = limiter.try_acquire(ip).unwrap();
+        limiter.release(ip);
+        assert!(limiter.try_acquire(ip).is_some());
+    }
+
+    #[test]
+    fn connections_limiter_drop_on_panic() {
+        let limiter = ConnectionLimiter::new(1);
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = limiter.try_acquire(ip).unwrap();
+            panic!();
+        }));
+
+        let second_attempt = limiter.try_acquire(ip);
+        assert!(
+            second_attempt.is_some(),
+            "The connection should be available"
+        );
+
+        drop(second_attempt);
+        assert!(
+            !limiter.connections.contains_key(&ip),
+            "The IP address should have been removed"
+        );
+    }
+
+    #[test]
+    fn connection_limiter_ip_isolation() {
+        let limiter = ConnectionLimiter::new(1);
+        let ip1 = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8));
+        let _g1 = limiter.try_acquire(ip1).unwrap();
+        assert!(limiter.try_acquire(ip2).is_some());
+    }
+
+    #[test]
+    fn connection_limiter_simple_limit() {
+        let limiter = ConnectionLimiter::new(2);
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let _g1 = limiter.try_acquire(ip).unwrap();
+        let _g2 = limiter.try_acquire(ip).unwrap();
+        // This third connection should not be allowed.
+        assert!(
+            limiter.try_acquire(ip).is_none(),
+            "The connection should not be allowed"
+        );
+        drop(_g1);
+        // Now this new connection should be allowed.
+        assert!(
+            limiter.try_acquire(ip).is_some(),
+            "The connection should be allowed"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn connection_limiter_concurrent_access() {
+        let limiter = Arc::new(ConnectionLimiter::new(10));
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let barrier = Arc::new(tokio::sync::Barrier::new(50));
+
+        let handles: Vec<_> = (0..50)
+            .map(|_| {
+                let l = limiter.clone();
+                let b = barrier.clone();
+                tokio::spawn(async move {
+                    b.wait().await; // wait for all threads
+                    let _guard = l.try_acquire(ip);
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    // _guard drop here.
+                })
+            })
+            .collect();
+
+        futures::future::join_all(handles).await;
+
+        // Check for leaks.
+        assert!(!limiter.connections.contains_key(&ip), "Connection leak");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn connection_limiter_enforcement_concurrent() {
+        let limiter = Arc::new(ConnectionLimiter::new(10));
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        let barrier = Arc::new(tokio::sync::Barrier::new(50));
+
+        let handles: Vec<_> = (0..50)
+            .map(|_| {
+                let l = limiter.clone();
+                let b = barrier.clone();
+                tokio::spawn(async move {
+                    b.wait().await;
+                    let guard = l.try_acquire(ip);
+                    let success = guard.is_some();
+
+                    if success {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                    success
+                })
+            })
+            .collect();
+
+        let results = futures::future::join_all(handles).await;
+        let total_success = results.into_iter().filter(|r| *r.as_ref().unwrap()).count();
+
+        assert_eq!(
+            total_success, 10,
+            "The limit of 10 connections was not enforced: {total_success}"
+        );
+    }
+}
