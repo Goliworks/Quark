@@ -304,7 +304,7 @@ impl ServerHandler {
 
                 // If the response is a redirection, rewrite the location.
                 // It usually happens when the redirection is relative.
-                // As an example, when the proying target is a directory that
+                // As an example, when the proxying target is a directory that
                 // rewrite the URL with a slash.
                 if res.status().is_redirection() {
                     let new_location = res
@@ -373,4 +373,27 @@ fn get_authority_and_domain(
         .ok_or("Invalid Host header format")?;
 
     Ok((host_str.to_string(), Cow::Borrowed(domain)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rewrite_redirect() {
+        let location = "/bar/";
+        let source_url = "http://example.com/foo";
+        let dest_url = "http://1.2.3.4:3000/bar";
+        let new_location = rewrite_redirect(location, source_url, dest_url);
+        assert_eq!(new_location, Some("/foo/".to_string()));
+    }
+
+    #[test]
+    fn test_rewrite_redirect_2() {
+        let location = "/qux/quux/";
+        let source_url = "http://example.com/baz";
+        let dest_url = "http://1.2.3.4:3000/qux/quux";
+        let new_location = rewrite_redirect(location, source_url, dest_url);
+        assert_eq!(new_location, Some("/baz/".to_string()));
+    }
 }

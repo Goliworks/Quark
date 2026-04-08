@@ -282,3 +282,17 @@ impl IpcCerts {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::config::tls::convert_to_wildcard;
+
+    #[test]
+    fn test_convert_to_wildcard() {
+        assert_eq!(convert_to_wildcard("www.example.com"), "*.example.com");
+        assert_eq!(
+            convert_to_wildcard("www.sub.example.com"),
+            "*.sub.example.com"
+        );
+    }
+}
