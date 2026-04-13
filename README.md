@@ -110,7 +110,7 @@ You can customize the build process using the following command-line arguments:
 
 #### Examples
 
-Native build on x86_64 (detects OS):
+Native build (detects OS and architecture):
 
 ```bash
 ./tools/build.sh

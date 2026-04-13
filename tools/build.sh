@@ -2,7 +2,6 @@
 set -e
 
 TMP_PACKAGE_DIR="tmp_package"
-DEFAULT_TARGET="x86_64"                                   # x86_64 or aarch64
 DEFAULT_LIBC="musl"                                       # musl or gnu (only for linux)
 DEFAULT_COMPILER="cargo"                                  # cargo or cross
 DEFAULT_PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]') # linux or freebsd
@@ -10,6 +9,14 @@ BIN_NAME="quark"
 CURRENT_DIR=$(pwd)
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 USAGE_EXAMPLE="Usage : $0 [--platform=linux|freebsd] [--target=x86_64|aarch64] [--libc=musl|gnu] [--compiler=cargo|cross]"
+
+# Set default target according to current architecture
+ARCH_RAW=$(uname -m)
+case "$ARCH_RAW" in
+x86_64 | amd64) DEFAULT_TARGET="x86_64" ;;
+aarch64 | arm64) DEFAULT_TARGET="aarch64" ;;
+*) DEFAULT_TARGET="$ARCH_RAW" ;;
+esac
 
 cd "$SCRIPT_DIR/.." || exit 1
 
