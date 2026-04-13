@@ -6,7 +6,7 @@
 
 <hr/>
 
-A fast **reverse proxy** and **file server** for Linux written in Rust.
+A fast **reverse proxy** and **file server** for Unix-like systems[^1] written in Rust.
 
 ## Features
 
@@ -98,24 +98,25 @@ The resulting binary is placed in `target/release/quark`
 ### Using the Build Script
 
 A convenience script, `./tools/build.sh`, is provided to compile and package Quark into a `.tar.gz` archive.
-By default, it builds for the **x86_64** architecture using **musl** and the default **cargo** compiler.
+
+The script **automatically detects** your host operating system (Linux or FreeBSD) and builds for the **x86_64** architecture using **cargo** by default.
 
 You can customize the build process using the following command-line arguments:
 | Argument | Description | Options |
 |--|--|--|
 | `--target` | Target CPU architecture | `x86_64` (default) or `aarch64` |
-| `--libc` | C standard library to link against | `musl` (default) or `gnu` |
+| `--libc` | C standard library _(Linux only)_ | `musl` (default) or `gnu` |
 | `--compiler` | Build tool to invoke | `cargo` (default) or `cross` |
 
 #### Examples
 
-Default build for `x86_64` with `musl` using Cargo:
+Native build on x86_64 (detects OS):
 
 ```bash
 ./tools/build.sh
 ```
 
-Build for ARM64 (`aarch64`) with GNU libc using Cross:
+Build for Linux ARM64 (`aarch64`) with GNU libc using cross[^2]:
 
 ```bash
 ./tools/build.sh --target=aarch64 --libc=gnu --compiler=cross
@@ -127,11 +128,22 @@ After a successful run, the script creates a compressed archive inside a `./dist
 The archive follows the naming convention:
 
 ```bash
-quark-<VERSION>-<ARCHITECTURE>-linux.tar.gz
+quark-<VERSION>-<ARCHITECTURE>-<PLATFORM>.tar.gz
 ```
 
 - `<VERSION>` – the version string defined in the project (e.g., `1.2.3`).
 - `<ARCHITECTURE>` – the target architecture you built for (`x86_64` or `aarch64`).
+- `<PLATFORM>` – the target platform you built for (`linux` or `freebsd`)
+
+Examples:
+
+```bash
+# On Linux
+quark-0.4.0-x86_64-linux.tar.gz
+
+# On FreeBSD
+quark-0.4.0-x86_64-freebsd.tar.gz
+```
 
 The archive contains:
 
@@ -141,8 +153,12 @@ The archive contains:
 
 ## Minimum Supported Rust Version
 
-The current MSRV is `1.85`.
+The current MSRV is `1.88`.
 
 ## License
 
 Quark is provided under the MIT license. See [LICENSE](https://github.com/Goliworks/Quark/blob/main/LICENSE).
+
+[^1]: Quark is officially supported on Linux and FreeBSD.
+
+[^2]: You must have [cross](https://github.com/cross-rs/cross) installed on your system and the Docker daemon running.
