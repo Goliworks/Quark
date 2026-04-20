@@ -218,7 +218,7 @@ impl InternalConfig {
                     cert: tls.certificate.clone(),
                     key: tls.key.clone(),
                 };
-                server.tls = Some(Vec::new());
+                server.tls.get_or_insert_with(Vec::new);
                 if let Some(tls) = &mut server.tls {
                     if !tls.contains(&tls_cert) {
                         // Add the certificate to the list.
