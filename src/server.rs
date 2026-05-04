@@ -62,9 +62,15 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     let tx_clone = tx.clone();
     tokio::spawn(async move {
         loop {
-            if let Ok(msg) = ipc::receive_ipc_message::<Vec<IpcCerts>>(&mut stream).await {
-                let msg = Arc::new(msg);
-                tx_clone.send(msg).unwrap();
+            match ipc::receive_ipc_message::<Vec<IpcCerts>>(&mut stream).await {
+                Ok(msg) => {
+                    let msg = Arc::new(msg);
+                    let _ = tx_clone.send(msg);
+                }
+                Err(err) => {
+                    tracing::error!("IPC stream error: {err:#}");
+                    break;
+                }
             }
         }
     });
