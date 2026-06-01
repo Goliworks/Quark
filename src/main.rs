@@ -23,6 +23,9 @@ use utils::QUARK_USER_AND_GROUP;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+
     // If the child process flag is set, run the server as a child process.
     if std::env::args().any(|arg| arg == "--child-process") {
         return server::server_process().await;
@@ -48,10 +51,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check for SIGTERM.
     let child_id = child.id() as i32;
-    check_sigterm(child_id);
 
     // Run the main process.
     main_process().await?;
+
+    println!("[Main Process] Sending SIGTERM to child");
+    kill(Pid::from_raw(child_id), Signal::SIGTERM).ok();
+    std::fs::remove_file(ipc::get_socket_path()).ok();
+
     child.wait()?;
     Ok(())
 }
@@ -145,6 +152,15 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
             tls::watch_certs(&paths_to_watch, port, stream, certs).await;
         });
     }
+
+    // Wait for SIGTERM or SIGINT.
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sigint = signal(SignalKind::interrupt())?;
+    tokio::select! {
+        _ = sigterm.recv() => println!("[Main Process] SIGTERM received"),
+        _ = sigint.recv() => println!("[Main Process] SIGINT received"),
+    }
+
     Ok(())
 }
 
@@ -155,18 +171,4 @@ fn add_path_to_watcher(target: PathBuf, port: u16, list: &mut HashMap<u16, Vec<P
     if !paths_to_watch.contains(&pathbuf) {
         paths_to_watch.push(pathbuf);
     }
-}
-
-fn check_sigterm(child_id: i32) {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
-
-    tokio::spawn(async move {
-        let mut sigterm = signal(SignalKind::terminate()).unwrap();
-        sigterm.recv().await;
-        println!("[Main Process] Received SIGTERM, exiting");
-        std::fs::remove_file(ipc::get_socket_path()).ok();
-        kill(Pid::from_raw(child_id), Signal::SIGTERM).ok();
-        std::process::exit(0);
-    });
 }
