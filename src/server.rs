@@ -26,6 +26,7 @@ use tokio::net::TcpListener;
 
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_rustls::TlsAcceptor;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::config::tls::{reload_certificates, IpcCerts, SniCertResolver, TlsConfig};
@@ -37,6 +38,10 @@ use crate::utils::{drop_privileges, format_ip, CACHED_CURRENT_TIME, QUARK_USER_A
 use crate::{load_balancing, logs};
 
 pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
+    // Create a cancellation token to stop the server gracefully.
+    let shutdown_token = CancellationToken::new();
+    let ipc_shutdown_token = shutdown_token.clone();
+
     // Wait for parent init.
     let socket_path = ipc::get_socket_path();
     let mut stream = match ipc::connect_to_socket(&socket_path).await {
@@ -69,6 +74,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(err) => {
                     tracing::error!("IPC stream error: {err:#}");
+                    ipc_shutdown_token.cancel();
                     break;
                 }
             }
@@ -80,12 +86,12 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Init logs. Declare a var to keep the guard alive in this scope.
     let _guard = logs::start_logs(options.logs);
 
-    check_sigterm();
+    check_sigterm(shutdown_token.clone());
 
     update_cached_time_worker();
 
-    init_servers(internal_config, tls_certs, tx).await?;
-
+    init_servers(internal_config, tls_certs, tx, shutdown_token).await?;
+    tracing::info!("Server exited");
     Ok(())
 }
 
@@ -93,6 +99,7 @@ async fn init_servers(
     service_config: InternalConfig,
     tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
+    shutdown_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting server");
 
@@ -155,6 +162,7 @@ async fn init_servers(
                 idle_timeout: service_config.global.idle_timeout,
                 idle_check_interval: service_config.global.idle_check_interval,
                 limiter,
+                shutdown_token: shutdown_token.clone(),
             };
 
             let listener =
@@ -182,6 +190,7 @@ async fn init_servers(
             idle_timeout: service_config.global.idle_timeout,
             idle_check_interval: service_config.global.idle_check_interval,
             limiter,
+            shutdown_token: shutdown_token.clone(),
         };
 
         let listener = build_tcp_listener(server.port, default_backlog).map_err(|err| {
@@ -298,7 +307,15 @@ async fn run_server<A: StreamAcceptor>(
     acceptor: Arc<A>,
 ) {
     loop {
-        let res = listener.accept().await;
+        let res = tokio::select! {
+            _ = config.shutdown_token.cancelled() => {
+                let port = listener.local_addr().unwrap().port();
+                tracing::info!("Shutting down server on port {port}");
+                break;
+            }
+            incoming = listener.accept() => incoming
+        };
+
         let (stream, address) = match res {
             Ok(res) => res,
             Err(err) => {
@@ -410,12 +427,12 @@ async fn run_server<A: StreamAcceptor>(
     }
 }
 
-fn check_sigterm() {
+fn check_sigterm(shutdown_token: CancellationToken) {
     tokio::spawn(async move {
         let mut sigterm = signal(SignalKind::terminate()).unwrap();
         sigterm.recv().await;
         tracing::info!("[Child Process] Received SIGTERM, exiting");
-        std::process::exit(0);
+        shutdown_token.cancel();
     });
 }
 
@@ -426,6 +443,7 @@ struct HttpServerConfig {
     idle_timeout: u64,
     idle_check_interval: u64,
     limiter: Option<Arc<ConnectionLimiter>>,
+    shutdown_token: CancellationToken,
 }
 
 async fn https_server(
