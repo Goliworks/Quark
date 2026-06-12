@@ -122,7 +122,7 @@ async fn init_servers(
     if service_config.empty {
         tracing::warn!("No services defined in the config file. Starting a welcome server.");
         tracing::warn!("Don't keep this server running in production without configuration!");
-        welcome_server(http.clone()).await;
+        welcome_server(http.clone(), shutdown_token).await;
         return Ok(());
     }
 
@@ -331,6 +331,7 @@ async fn run_server<A: StreamAcceptor>(
         let server_handler = Arc::clone(&config.server_handler);
         let limiter = config.limiter.clone();
         let http = config.http.clone();
+        let shutdown_token = config.shutdown_token.clone();
 
         tokio::task::spawn(async move {
             // Limit ip only if defined in the config file.
@@ -420,6 +421,15 @@ async fn run_server<A: StreamAcceptor>(
                                 "Connection idle"
                             );
                         }
+                    }
+                    _ = shutdown_token.cancelled() => {
+                        tracing::warn!("Shutting down connection");
+                        conn.as_mut().graceful_shutdown();
+                        let _ = tokio::time::timeout(
+                            Duration::from_secs(5),
+                            conn.as_mut()
+                        ).await;
+                        break;
                     }
                 }
             }

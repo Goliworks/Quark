@@ -20,6 +20,7 @@ use hyper_util::{
 };
 use nix::unistd::getuid;
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::ConfigHeadersActions;
 
@@ -98,14 +99,29 @@ pub fn custom_headers<T: HasMutableHeaders>(req: &mut T, headers_actions: &Confi
     }
 }
 
-pub async fn welcome_server(http: Arc<Builder<TokioExecutor>>) {
+pub async fn welcome_server(http: Arc<Builder<TokioExecutor>>, shutdown_token: CancellationToken) {
     let port: u16 = if getuid().is_root() { 80 } else { 8080 };
     let socket_addr: SocketAddr = ([0, 0, 0, 0], port).into();
     let listener = TcpListener::bind(socket_addr).await.unwrap();
 
     loop {
         let http = Arc::clone(&http);
-        let (stream, _) = listener.accept().await.unwrap();
+        let res = tokio::select! {
+            _ = shutdown_token.cancelled() => {
+                tracing::info!("Shutting down the Welcome Server");
+                break;
+            }
+            incoming = listener.accept() => incoming
+        };
+
+        let (stream, _) = match res {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("Welcome server failed to accept connection: {err:#}");
+                continue;
+            }
+        };
+
         tokio::task::spawn(async move {
             if let Err(err) = http
                 .serve_connection(TokioIo::new(stream), service_fn(welcome_server_msg))
