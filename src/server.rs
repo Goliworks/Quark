@@ -13,7 +13,10 @@ use std::{net::SocketAddr, sync::Arc};
 
 use ::futures::future::join_all;
 use dashmap::DashMap;
+use hyper::body::Incoming;
 use hyper::service::service_fn;
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioTimer;
 use hyper_util::{
@@ -108,7 +111,14 @@ async fn init_servers(
 
     let http_builder = build_http(&service_config.global);
     let http = Arc::new(http_builder);
-    let client = Arc::new(Client::builder(TokioExecutor::new()).build_http());
+    let https_client = HttpsConnectorBuilder::new()
+        .with_native_roots()
+        .unwrap()
+        .https_or_http()
+        .enable_http1()
+        .build();
+    let client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>> =
+        Arc::new(Client::builder(TokioExecutor::new()).build(https_client));
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
     let default_backlog = service_config.global.backlog;

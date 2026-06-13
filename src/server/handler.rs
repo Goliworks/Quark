@@ -5,6 +5,7 @@ use hyper::{
     header::{HeaderName, HeaderValue},
     Request, Response, StatusCode,
 };
+use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 use tokio::time::timeout;
 
@@ -46,7 +47,7 @@ pub struct ServerHandler {
     params: Arc<ServerParams>,
     loadbalancer: Arc<load_balancing::LoadBalancerConfig>,
     max_req: Arc<tokio::sync::Semaphore>,
-    client: Arc<Client<HttpConnector, Incoming>>,
+    client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>>,
 }
 
 impl ServerHandler {
@@ -54,7 +55,7 @@ impl ServerHandler {
         params: Arc<ServerParams>,
         loadbalancer: Arc<load_balancing::LoadBalancerConfig>,
         max_req: Arc<tokio::sync::Semaphore>,
-        client: Arc<Client<HttpConnector, Incoming>>,
+        client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>>,
     ) -> Arc<ServerHandler> {
         Arc::new(ServerHandler {
             params,
