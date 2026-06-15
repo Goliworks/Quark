@@ -32,6 +32,7 @@ const DEFAULT_HTTP_HEADER_TIMEOUT: u64 = 30;
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 const DEFAULT_IDLE_CHECK_INTERVAL: u64 = 20;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
+const DEFAULT_TLS_PROXY_VERIFY: bool = true;
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
@@ -56,6 +57,7 @@ pub struct Global {
     pub idle_timeout: u64,
     pub idle_check_interval: u64,
     pub max_conn_per_ip: Option<usize>,
+    pub tls_proxy_verify: bool,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -301,6 +303,9 @@ impl InternalConfig {
             idle_check_interval: global_config
                 .and_then(|g| g.idle_check_interval)
                 .unwrap_or(DEFAULT_IDLE_CHECK_INTERVAL),
+            tls_proxy_verify: global_config
+                .and_then(|g| g.tls_proxy_verify)
+                .unwrap_or(DEFAULT_TLS_PROXY_VERIFY),
             max_conn_per_ip: global_config.and_then(|g| g.max_conn_per_ip),
         };
 

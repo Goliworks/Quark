@@ -113,10 +113,7 @@ async fn init_servers(
     let http_builder = build_http(&service_config.global);
     let http = Arc::new(http_builder);
 
-    // Temporary. Only for tests.
-    let secure = true;
-
-    let tls_config = if secure {
+    let tls_config = if service_config.global.tls_proxy_verify {
         rustls::ClientConfig::builder()
             .with_native_roots()
             .unwrap()

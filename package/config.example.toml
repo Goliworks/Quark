@@ -20,6 +20,7 @@ http_header_timeout = 30   # (Optional) Timeout in seconds for reading HTTP head
 idle_timeout = 300         # (Optional) Timeout in seconds for idle connections. (default: 300s)
 idle_check_interval = 20   # (Optional) Interval in seconds between idle checks. (default: 20s)
 max_conn_per_ip = 10       # (Optional) Maximum number of simultaneous connections per IP address. (default: None)
+tls_proxy_verify = true    # (Optional) Verify TLS certificates of backend servers. (default: true)
 
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
