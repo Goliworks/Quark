@@ -15,7 +15,7 @@ use ::futures::future::join_all;
 use dashmap::DashMap;
 use hyper::body::Incoming;
 use hyper::service::service_fn;
-use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_rustls::{ConfigBuilderExt, HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioTimer;
@@ -37,6 +37,7 @@ use crate::config::{self, InternalConfig, Locations, Options, TargetType};
 use crate::ipc::{self, IpcMessage};
 use crate::middleware::ServerService;
 use crate::server::handler::ServerHandler;
+use crate::server::server_utils::NoCertificateVerification;
 use crate::utils::{drop_privileges, format_ip, CACHED_CURRENT_TIME, QUARK_USER_AND_GROUP};
 use crate::{load_balancing, logs};
 
@@ -111,12 +112,28 @@ async fn init_servers(
 
     let http_builder = build_http(&service_config.global);
     let http = Arc::new(http_builder);
+
+    // Temporary. Only for tests.
+    let secure = true;
+
+    let tls_config = if secure {
+        rustls::ClientConfig::builder()
+            .with_native_roots()
+            .unwrap()
+            .with_no_client_auth()
+    } else {
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoCertificateVerification))
+            .with_no_client_auth()
+    };
+
     let https_client = HttpsConnectorBuilder::new()
-        .with_native_roots()
-        .unwrap()
+        .with_tls_config(tls_config)
         .https_or_http()
         .enable_http1()
         .build();
+
     let client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>> =
         Arc::new(Client::builder(TokioExecutor::new()).build(https_client));
     let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
