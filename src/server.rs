@@ -100,7 +100,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn init_servers(
-    service_config: InternalConfig,
+    internal_config: InternalConfig,
     tls_certs: Arc<HashMap<u16, Vec<IpcCerts>>>,
     tx: tokio::sync::broadcast::Sender<Arc<IpcMessage<Vec<IpcCerts>>>>,
     shutdown_token: CancellationToken,
@@ -110,10 +110,10 @@ async fn init_servers(
     // List of servers to start.
     let mut servers: Vec<Pin<Box<dyn Future<Output = ()> + Send>>> = Vec::new();
 
-    let http_builder = build_http(&service_config.global);
+    let http_builder = build_http(&internal_config.global);
     let http = Arc::new(http_builder);
 
-    let tls_config = if service_config.global.tls_proxy_verify {
+    let tls_config = if internal_config.global.tls_proxy_verify {
         rustls::ClientConfig::builder()
             .with_native_roots()
             .unwrap()
@@ -133,27 +133,27 @@ async fn init_servers(
 
     let client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>> =
         Arc::new(Client::builder(TokioExecutor::new()).build(https_client));
-    let max_conns = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_conn));
-    let max_req = Arc::new(tokio::sync::Semaphore::new(service_config.global.max_req));
-    let default_backlog = service_config.global.backlog;
+    let max_conns = Arc::new(tokio::sync::Semaphore::new(internal_config.global.max_conn));
+    let max_req = Arc::new(tokio::sync::Semaphore::new(internal_config.global.max_req));
+    let default_backlog = internal_config.global.backlog;
 
     #[cfg(debug_assertions)]
-    println!("Config: {:#?}", service_config.servers);
+    println!("Config: {:#?}", internal_config.servers);
 
     // If no servers are defined, start a welcome server.
     // This usually happens when the config file is empty, especially right
     // after the server is installed for the first time.
-    if service_config.empty {
+    if internal_config.empty {
         tracing::warn!("No services defined in the config file. Starting a welcome server.");
         tracing::warn!("Don't keep this server running in production without configuration!");
         welcome_server(http.clone(), shutdown_token).await;
         return Ok(());
     }
 
-    let lb_config = generate_loadbalancing_config(&service_config.servers);
+    let lb_config = generate_loadbalancing_config(&internal_config.servers);
 
     // Build a server for each port defined in the config file.
-    for (_, server) in service_config.servers {
+    for (_, server) in internal_config.servers {
         let http = Arc::clone(&http);
         let client = Arc::clone(&client);
         let max_conns = Arc::clone(&max_conns);
@@ -165,7 +165,7 @@ async fn init_servers(
         let server_handler =
             handler::ServerHandler::builder(server_params, lb_config, max_req, client);
 
-        let limiter = service_config
+        let limiter = internal_config
             .global
             .max_conn_per_ip
             .map(|max_conn| Arc::new(ConnectionLimiter::new(max_conn)));
@@ -183,8 +183,8 @@ async fn init_servers(
                 max_conns,
                 http,
                 server_handler,
-                idle_timeout: service_config.global.idle_timeout,
-                idle_check_interval: service_config.global.idle_check_interval,
+                idle_timeout: internal_config.global.idle_timeout,
+                idle_check_interval: internal_config.global.idle_check_interval,
                 limiter,
                 shutdown_token: shutdown_token.clone(),
             };
@@ -199,7 +199,7 @@ async fn init_servers(
                 https_config,
                 tx,
                 tls_certs,
-                service_config.global.tls_handshake_timeout,
+                internal_config.global.tls_handshake_timeout,
                 server.https_port,
                 listener,
             );
@@ -211,8 +211,8 @@ async fn init_servers(
             max_conns,
             http,
             server_handler,
-            idle_timeout: service_config.global.idle_timeout,
-            idle_check_interval: service_config.global.idle_check_interval,
+            idle_timeout: internal_config.global.idle_timeout,
+            idle_check_interval: internal_config.global.idle_check_interval,
             limiter,
             shutdown_token: shutdown_token.clone(),
         };

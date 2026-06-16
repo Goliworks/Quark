@@ -91,14 +91,15 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
 
     // Get options from command line.
     let options: Options = argh::from_env();
-    // Load the config file.
-    let service_config = InternalConfig::build_from(options.config);
+
+    // Load the TOML config file and build the internal config.
+    let internal_config = InternalConfig::build_from(options.config);
 
     let mut paths_to_watch_list: HashMap<u16, Vec<PathBuf>> = HashMap::new();
     let mut cert_list: HashMap<u16, Vec<IpcCerts>> = HashMap::new();
     let mut tls_servers: HashMap<u16, Vec<config::TlsCertificate>> = HashMap::new();
 
-    for server in service_config.servers.values() {
+    for server in internal_config.servers.values() {
         if let Some(tls_certs) = &server.tls {
             let port = server.https_port;
             tls_servers.insert(port, tls_certs.clone());
@@ -132,7 +133,7 @@ async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
     let message = ipc::IpcMessage {
         kind: "config".to_string(),
         key: None,
-        payload: service_config,
+        payload: internal_config,
     };
     ipc::send_ipc_message(stream.clone(), message).await?;
 
