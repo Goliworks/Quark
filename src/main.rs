@@ -64,23 +64,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn main_process() -> Result<(), Box<dyn std::error::Error>> {
-    // Create a unix socket listener.
+    let is_root = getuid().is_root();
     let socket_path = ipc::get_socket_path();
+    let quark_user = if is_root {
+        Some(
+            User::from_name(QUARK_USER_AND_GROUP)
+                .expect("User lookup failed")
+                .expect("User not found"),
+        )
+    } else {
+        None
+    };
+
+    // Create a unix socket listener.
+    if let Some(parent) = Path::new(&socket_path).parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Can't create socket directory {parent:?}: {e}"))?;
+
+        if let Some(user) = &quark_user {
+            chown(parent, Some(user.uid.as_raw()), Some(user.gid.as_raw()))?;
+        }
+    }
+
     let listener = tokio::net::UnixListener::bind(&socket_path)
         .map_err(|e| format!("Can't use the socket at {} : {}", &socket_path, e))?;
 
-    if getuid().is_root() {
-        // Change the owner and permissions of the socket file.
-        let quark_user = User::from_name(QUARK_USER_AND_GROUP)
-            .expect("User lookup failed")
-            .expect("User not found");
-
+    if let Some(user) = &quark_user {
         let path = Path::new(&socket_path);
-        chown(
-            path,
-            Some(quark_user.uid.as_raw()),
-            Some(quark_user.gid.as_raw()),
-        )?;
+        chown(path, Some(user.uid.as_raw()), Some(user.gid.as_raw()))?;
         set_permissions(&socket_path, Permissions::from_mode(0o600))?;
     }
 
