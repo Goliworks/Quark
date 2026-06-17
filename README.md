@@ -6,7 +6,7 @@
 
 <hr/>
 
-A fast **reverse proxy** and **file server** for Unix-like systems[^1] written in Rust.
+A fast and modern **reverse proxy** and **file server** for Unix-like systems[^1] written in Rust.
 
 ## Features
 
@@ -139,10 +139,10 @@ Examples:
 
 ```bash
 # On Linux
-quark-0.4.0-x86_64-linux.tar.gz
+quark-0.4.1-x86_64-linux.tar.gz
 
 # On FreeBSD
-quark-0.4.0-x86_64-freebsd.tar.gz
+quark-0.4.1-x86_64-freebsd.tar.gz
 ```
 
 The archive contains:
