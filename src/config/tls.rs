@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{self, BufReader, Cursor};
+use std::io::{self, Cursor};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -13,6 +13,7 @@ use rustls::crypto::aws_lc_rs::sign::any_supported_type;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use rustls::ServerConfig;
+use rustls_pki_types::pem::PemObject;
 use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, Notify};
@@ -165,17 +166,17 @@ fn extract_domains_from_x509(x509: &X509Certificate) -> Vec<String> {
 }
 
 // Load public certificate from buffer.
-fn load_certs(buf: &Vec<u8>) -> io::Result<Vec<CertificateDer<'static>>> {
-    let mut reader = BufReader::new(Cursor::new(buf));
-    // Load and return certificate.
-    rustls_pemfile::certs(&mut reader).collect()
+fn load_certs(buf: &[u8]) -> io::Result<Vec<CertificateDer<'static>>> {
+    let reader = Cursor::new(buf);
+    CertificateDer::pem_reader_iter(reader)
+        .map(|res| res.map_err(io::Error::other))
+        .collect()
 }
 
 // Load private key from buffer.
-fn load_private_key(buf: &Vec<u8>) -> io::Result<PrivateKeyDer<'static>> {
-    let mut reader = BufReader::new(Cursor::new(buf));
-    // Load and return a single private key.
-    rustls_pemfile::private_key(&mut reader).map(|key| key.unwrap())
+fn load_private_key(buf: &[u8]) -> io::Result<PrivateKeyDer<'static>> {
+    let reader = Cursor::new(buf);
+    PrivateKeyDer::from_pem_reader(reader).map_err(io::Error::other)
 }
 
 // Start to watch for certificates changes.

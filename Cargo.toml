@@ -11,7 +11,6 @@ hyper-util = { version = "0.1", features = ["full"] }
 tokio-rustls = "0.26.2"
 rustls = "0.23.27"
 argh = "0.1.13"
-rustls-pemfile = "2.2.0"
 toml = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 futures = "0.3.31"
