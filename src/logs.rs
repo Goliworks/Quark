@@ -1,11 +1,16 @@
-use tracing_appender::{non_blocking::WorkerGuard, rolling};
+use tracing_appender::{
+    non_blocking::WorkerGuard,
+    rolling::{RollingFileAppender, Rotation},
+};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer};
 
-pub fn start_logs(path: String) -> WorkerGuard {
-    let appender = rolling::never(path, "logs.log");
+use crate::config::{self, RollingStrategy};
+
+pub fn start_logs(path: String, conf: &config::Log) -> WorkerGuard {
+    let appender = build_appender(&path, conf);
     let (non_blocking, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
-        .buffered_lines_limit(2048)
-        .lossy(true)
+        .buffered_lines_limit(conf.buffer_lines_limit as usize)
+        .lossy(conf.lossy)
         .finish(appender);
 
     #[cfg(debug_assertions)]
@@ -37,4 +42,19 @@ pub fn start_logs(path: String) -> WorkerGuard {
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     guard
+}
+
+fn build_appender(path: &str, config: &config::Log) -> RollingFileAppender {
+    RollingFileAppender::builder()
+        .rotation(match config.rotation {
+            RollingStrategy::Never => Rotation::NEVER,
+            RollingStrategy::Minutely => Rotation::MINUTELY,
+            RollingStrategy::Hourly => Rotation::HOURLY,
+            RollingStrategy::Daily => Rotation::DAILY,
+            RollingStrategy::Weekly => Rotation::WEEKLY,
+        })
+        .filename_prefix(&config.prefix)
+        .filename_suffix(&config.suffix)
+        .build(path)
+        .expect("failed to initialize log appender")
 }

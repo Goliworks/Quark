@@ -35,6 +35,16 @@ pub struct Global {
     pub idle_check_interval: Option<u64>,
     pub max_conn_per_ip: Option<usize>,
     pub tls_proxy_verify: Option<bool>,
+    pub log: Option<Log>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Log {
+    pub rotation: Option<String>,
+    pub buffer_lines_limit: Option<u64>,
+    pub prefix: Option<String>,
+    pub suffix: Option<String>,
+    pub lossy: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

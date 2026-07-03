@@ -33,6 +33,10 @@ const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 const DEFAULT_IDLE_CHECK_INTERVAL: u64 = 20;
 const DEFAULT_FORBIDDEN_DIR: bool = true;
 const DEFAULT_TLS_PROXY_VERIFY: bool = true;
+const DEFAULT_LOG_BUFFER_LINES_LIMIT: u64 = 2048;
+const DEFAULT_LOG_LOSSY: bool = false;
+const DEFAULT_LOG_PREFIX: &str = "quark";
+const DEFAULT_LOG_SUFFIX: &str = "log";
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
@@ -58,6 +62,70 @@ pub struct Global {
     pub idle_check_interval: u64,
     pub max_conn_per_ip: Option<usize>,
     pub tls_proxy_verify: bool,
+    pub log: Log,
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct Log {
+    pub rotation: RollingStrategy,
+    pub buffer_lines_limit: u64,
+    pub prefix: String,
+    pub suffix: String,
+    pub lossy: bool,
+}
+
+impl Default for Log {
+    fn default() -> Self {
+        Log {
+            rotation: RollingStrategy::default(),
+            buffer_lines_limit: DEFAULT_LOG_BUFFER_LINES_LIMIT,
+            prefix: DEFAULT_LOG_PREFIX.to_string(),
+            suffix: DEFAULT_LOG_SUFFIX.to_string(),
+            lossy: DEFAULT_LOG_LOSSY,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default)]
+pub enum RollingStrategy {
+    #[default]
+    Never,
+    Minutely,
+    Hourly,
+    Daily,
+    Weekly,
+}
+
+impl TryFrom<toml_model::Log> for Log {
+    type Error = String;
+
+    fn try_from(toml: toml_model::Log) -> Result<Self, Self::Error> {
+        let default_log = Log::default();
+
+        let rotation = match toml.rotation.as_deref() {
+            Some(r) => match r.to_lowercase().as_str() {
+                "never" => RollingStrategy::Never,
+                "minutely" => RollingStrategy::Minutely,
+                "hourly" => RollingStrategy::Hourly,
+                "daily" => RollingStrategy::Daily,
+                "weekly" => RollingStrategy::Weekly,
+                other => return Err(format!(
+                    "log rotation: unknown value '{other}', expected never/minutely/hourly/daily/weekly"
+                )),
+            },
+            None => default_log.rotation,
+        };
+
+        Ok(Log {
+            rotation,
+            buffer_lines_limit: toml
+                .buffer_lines_limit
+                .unwrap_or(default_log.buffer_lines_limit),
+            prefix: toml.prefix.unwrap_or(default_log.prefix),
+            suffix: toml.suffix.unwrap_or(default_log.suffix),
+            lossy: toml.lossy.unwrap_or(default_log.lossy),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -272,6 +340,17 @@ impl InternalConfig {
         }
 
         let global_config = config.global.as_ref();
+
+        let global_log_config = global_config
+            .and_then(|g| g.log.clone())
+            .map(Log::try_from)
+            .transpose()
+            .unwrap_or_else(|e| {
+                eprintln!("Config error: {e}");
+                None
+            })
+            .unwrap_or_default();
+
         let global = Global {
             backlog: global_config
                 .and_then(|g| g.backlog)
@@ -307,6 +386,7 @@ impl InternalConfig {
                 .and_then(|g| g.tls_proxy_verify)
                 .unwrap_or(DEFAULT_TLS_PROXY_VERIFY),
             max_conn_per_ip: global_config.and_then(|g| g.max_conn_per_ip),
+            log: global_log_config,
         };
 
         InternalConfig {

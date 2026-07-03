@@ -88,7 +88,7 @@ pub async fn server_process() -> Result<(), Box<dyn std::error::Error>> {
     // Get options from command line.
     let options: Options = argh::from_env();
     // Init logs. Declare a var to keep the guard alive in this scope.
-    let _guard = logs::start_logs(options.logs);
+    let _guard = logs::start_logs(options.logs, &internal_config.global.log);
 
     check_sigterm(shutdown_token.clone());
 
