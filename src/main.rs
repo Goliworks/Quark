@@ -21,6 +21,11 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::Mutex;
 use utils::QUARK_USER_AND_GROUP;
 
+use tikv_jemallocator::Jemalloc;
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use nix::sys::signal::{kill, Signal};
