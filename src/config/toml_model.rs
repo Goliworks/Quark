@@ -38,7 +38,7 @@ pub struct Global {
     pub log: Option<Log>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 pub struct Log {
     pub rotation: Option<String>,
     pub buffer_lines_limit: Option<u64>,

@@ -65,6 +65,57 @@ pub struct Global {
     pub log: Log,
 }
 
+impl Default for Global {
+    fn default() -> Self {
+        Global {
+            backlog: DEFAULT_BACKLOG,
+            max_conn: DEFAULT_MAX_CONNECTIONS,
+            max_req: DEFAULT_MAX_REQUESTS,
+            keepalive: DEFAULT_KEEPALIVE,
+            keepalive_timeout: DEFAULT_KEEPALIVE_TIMEOUT,
+            keepalive_interval: DEFAULT_KEEPALIVE_INTERVAL,
+            tls_handshake_timeout: DEFAULT_TLS_HANDSHAKE_TIMEOUT,
+            http_header_timeout: DEFAULT_HTTP_HEADER_TIMEOUT,
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            idle_check_interval: DEFAULT_IDLE_CHECK_INTERVAL,
+            tls_proxy_verify: DEFAULT_TLS_PROXY_VERIFY,
+            max_conn_per_ip: None,
+            log: Log::default(),
+        }
+    }
+}
+
+impl TryFrom<toml_model::Global> for Global {
+    type Error = String;
+
+    fn try_from(raw: toml_model::Global) -> Result<Self, Self::Error> {
+        let default = Global::default();
+        let log = raw.log.map(Log::try_from).transpose()?.unwrap_or_default();
+
+        Ok(Global {
+            backlog: raw.backlog.unwrap_or(default.backlog),
+            max_conn: raw.max_connections.unwrap_or(default.max_conn),
+            max_req: raw.max_requests.unwrap_or(default.max_req),
+            keepalive: raw.keepalive.unwrap_or(default.keepalive),
+            keepalive_timeout: raw.keepalive_timeout.unwrap_or(default.keepalive_timeout),
+            keepalive_interval: raw.keepalive_interval.unwrap_or(default.keepalive_interval),
+            tls_handshake_timeout: raw
+                .tls_handshake_timeout
+                .unwrap_or(default.tls_handshake_timeout),
+            http_header_timeout: raw
+                .http_header_timeout
+                .unwrap_or(default.http_header_timeout),
+            idle_timeout: raw.idle_timeout.unwrap_or(default.idle_timeout),
+            idle_check_interval: raw
+                .idle_check_interval
+                .unwrap_or(default.idle_check_interval),
+            tls_proxy_verify: raw.tls_proxy_verify.unwrap_or(default.tls_proxy_verify),
+            max_conn_per_ip: raw.max_conn_per_ip,
+            log,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Log {
     pub rotation: RollingStrategy,
@@ -84,16 +135,6 @@ impl Default for Log {
             lossy: DEFAULT_LOG_LOSSY,
         }
     }
-}
-
-#[derive(Debug, Clone, Encode, Decode, Default)]
-pub enum RollingStrategy {
-    #[default]
-    Never,
-    Minutely,
-    Hourly,
-    Daily,
-    Weekly,
 }
 
 impl TryFrom<toml_model::Log> for Log {
@@ -126,6 +167,16 @@ impl TryFrom<toml_model::Log> for Log {
             lossy: toml.lossy.unwrap_or(default_log.lossy),
         })
     }
+}
+
+#[derive(Debug, Clone, Encode, Decode, Default)]
+pub enum RollingStrategy {
+    #[default]
+    Never,
+    Minutely,
+    Hourly,
+    Daily,
+    Weekly,
 }
 
 #[derive(Debug, Clone, Encode, Decode, Default)]
@@ -339,55 +390,15 @@ impl InternalConfig {
             }
         }
 
-        let global_config = config.global.as_ref();
-
-        let global_log_config = global_config
-            .and_then(|g| g.log.clone())
-            .map(Log::try_from)
+        let global = config
+            .global
+            .map(Global::try_from)
             .transpose()
             .unwrap_or_else(|e| {
                 eprintln!("Config error: {e}");
                 None
             })
             .unwrap_or_default();
-
-        let global = Global {
-            backlog: global_config
-                .and_then(|g| g.backlog)
-                .unwrap_or(DEFAULT_BACKLOG),
-            max_conn: global_config
-                .and_then(|g| g.max_connections)
-                .unwrap_or(DEFAULT_MAX_CONNECTIONS),
-            max_req: global_config
-                .and_then(|g| g.max_requests)
-                .unwrap_or(DEFAULT_MAX_REQUESTS),
-            keepalive: global_config
-                .and_then(|g| g.keepalive)
-                .unwrap_or(DEFAULT_KEEPALIVE),
-            keepalive_timeout: global_config
-                .and_then(|g| g.keepalive_timeout)
-                .unwrap_or(DEFAULT_KEEPALIVE_TIMEOUT),
-            keepalive_interval: global_config
-                .and_then(|g| g.keepalive_interval)
-                .unwrap_or(DEFAULT_KEEPALIVE_INTERVAL),
-            tls_handshake_timeout: global_config
-                .and_then(|g| g.tls_handshake_timeout)
-                .unwrap_or(DEFAULT_TLS_HANDSHAKE_TIMEOUT),
-            http_header_timeout: global_config
-                .and_then(|g| g.http_header_timeout)
-                .unwrap_or(DEFAULT_HTTP_HEADER_TIMEOUT),
-            idle_timeout: global_config
-                .and_then(|g| g.idle_timeout)
-                .unwrap_or(DEFAULT_IDLE_TIMEOUT),
-            idle_check_interval: global_config
-                .and_then(|g| g.idle_check_interval)
-                .unwrap_or(DEFAULT_IDLE_CHECK_INTERVAL),
-            tls_proxy_verify: global_config
-                .and_then(|g| g.tls_proxy_verify)
-                .unwrap_or(DEFAULT_TLS_PROXY_VERIFY),
-            max_conn_per_ip: global_config.and_then(|g| g.max_conn_per_ip),
-            log: global_log_config,
-        };
 
         InternalConfig {
             servers,
@@ -831,9 +842,8 @@ mod headers {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::toml_model::HeaderAction;
-
     use super::*;
+    use crate::config::toml_model::HeaderAction;
 
     fn header_action_mock() -> HeaderAction {
         HeaderAction {
