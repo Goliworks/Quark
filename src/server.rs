@@ -131,8 +131,12 @@ async fn init_servers(
         .enable_http1()
         .build();
 
-    let client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>> =
-        Arc::new(Client::builder(TokioExecutor::new()).build(https_client));
+    let client: Arc<Client<HttpsConnector<HttpConnector>, Incoming>> = Arc::new(
+        Client::builder(TokioExecutor::new())
+            .pool_timer(TokioTimer::new())
+            .timer(TokioTimer::new())
+            .build(https_client),
+    );
     let max_conns = Arc::new(tokio::sync::Semaphore::new(internal_config.global.max_conn));
     let max_req = Arc::new(tokio::sync::Semaphore::new(internal_config.global.max_req));
     let default_backlog = internal_config.global.backlog;
