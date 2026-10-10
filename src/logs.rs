@@ -6,8 +6,8 @@ use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer};
 
 use crate::config::{self, RollingStrategy};
 
-pub fn start_logs(path: String, conf: &config::Log) -> WorkerGuard {
-    let appender = build_appender(&path, conf);
+pub fn start_logs(conf: &config::Log) -> WorkerGuard {
+    let appender = build_appender(&conf.path, conf);
     let (non_blocking, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
         .buffered_lines_limit(conf.buffer_lines_limit as usize)
         .lossy(conf.lossy)

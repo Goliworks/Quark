@@ -37,9 +37,9 @@ const DEFAULT_LOG_BUFFER_LINES_LIMIT: u64 = 2048;
 const DEFAULT_LOG_LOSSY: bool = false;
 const DEFAULT_LOG_PREFIX: &str = "quark";
 const DEFAULT_LOG_SUFFIX: &str = "log";
-
-const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
+const DEFAULT_LOG_DISABLED: bool = false;
 const DEFAULT_LOG_PATH: &str = "/var/log/quark";
+const DEFAULT_CONFIG_FILE_PATH: &str = "/etc/quark/config.toml";
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct InternalConfig {
@@ -118,6 +118,8 @@ impl TryFrom<toml_model::Global> for Global {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Log {
+    pub path: String,
+    pub disabled: bool,
     pub rotation: RollingStrategy,
     pub buffer_lines_limit: u64,
     pub prefix: String,
@@ -128,6 +130,8 @@ pub struct Log {
 impl Default for Log {
     fn default() -> Self {
         Log {
+            path: DEFAULT_LOG_PATH.to_string(),
+            disabled: DEFAULT_LOG_DISABLED,
             rotation: RollingStrategy::default(),
             buffer_lines_limit: DEFAULT_LOG_BUFFER_LINES_LIMIT,
             prefix: DEFAULT_LOG_PREFIX.to_string(),
@@ -141,6 +145,9 @@ impl TryFrom<toml_model::Log> for Log {
     type Error = String;
 
     fn try_from(toml: toml_model::Log) -> Result<Self, Self::Error> {
+        // Get the options from the command line.
+        let options: Options = argh::from_env();
+
         let default_log = Log::default();
 
         let rotation = match toml.rotation.as_deref() {
@@ -157,7 +164,18 @@ impl TryFrom<toml_model::Log> for Log {
             None => default_log.rotation,
         };
 
+        let path = options.logs.or(toml.path).unwrap_or(default_log.path);
+        let cannonical_path = fs::canonicalize(&path).unwrap_or_else(|e| {
+            eprintln!("Failed to canonicalize log path {path} \n{e}");
+            std::process::exit(1);
+        });
+
         Ok(Log {
+            path: cannonical_path.to_str().unwrap().to_string(),
+            disabled: options
+                .disable_logs
+                .or(toml.disabled)
+                .unwrap_or(default_log.disabled),
             rotation,
             buffer_lines_limit: toml
                 .buffer_lines_limit
@@ -269,8 +287,11 @@ pub struct Options {
     #[argh(option, short = 'c', default = "DEFAULT_CONFIG_FILE_PATH.to_string()")]
     pub config: String,
     /// logs directory path
-    #[argh(option, short = 'l', default = "DEFAULT_LOG_PATH.to_string()")]
-    pub logs: String,
+    #[argh(option, short = 'l')]
+    pub logs: Option<String>,
+    /// disable logs.
+    #[argh(option)]
+    pub disable_logs: Option<bool>,
 
     /// run as child process
     #[argh(switch)]

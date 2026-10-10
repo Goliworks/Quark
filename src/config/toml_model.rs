@@ -40,6 +40,8 @@ pub struct Global {
 
 #[derive(Debug, Deserialize)]
 pub struct Log {
+    pub path: Option<String>,
+    pub disabled: Option<bool>,
     pub rotation: Option<String>,
     pub buffer_lines_limit: Option<u64>,
     pub prefix: Option<String>,
