@@ -174,7 +174,7 @@ impl TryFrom<toml_model::Log> for Log {
             path: cannonical_path.to_str().unwrap().to_string(),
             disabled: options
                 .disable_logs
-                .or(toml.disabled)
+                .or(toml.disable)
                 .unwrap_or(default_log.disabled),
             rotation,
             buffer_lines_limit: toml
@@ -290,7 +290,7 @@ pub struct Options {
     #[argh(option, short = 'l')]
     pub logs: Option<String>,
     /// disable logs.
-    #[argh(option)]
+    #[argh(switch)]
     pub disable_logs: Option<bool>,
 
     /// run as child process

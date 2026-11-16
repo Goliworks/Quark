@@ -6,30 +6,30 @@ use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Layer};
 
 use crate::config::{self, RollingStrategy};
 
-pub fn start_logs(conf: &config::Log) -> WorkerGuard {
-    let appender = build_appender(&conf.path, conf);
-    let (non_blocking, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
-        .buffered_lines_limit(conf.buffer_lines_limit as usize)
-        .lossy(conf.lossy)
-        .finish(appender);
-
-    #[cfg(debug_assertions)]
-    let terminal_filter = EnvFilter::new("quark=trace");
-
-    let file_filter = EnvFilter::new("quark=info");
+pub fn start_logs(conf: &config::Log) -> Option<WorkerGuard> {
+    // Write logs in file only if enabled.
+    let (file_layer, guard) = if !conf.disabled {
+        let appender = build_appender(&conf.path, conf);
+        let (non_blocking, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
+            .buffered_lines_limit(conf.buffer_lines_limit as usize)
+            .lossy(conf.lossy)
+            .finish(appender);
+        let layer = tracing_subscriber::fmt::layer()
+            .with_writer(non_blocking)
+            .with_ansi(false)
+            .with_file(false)
+            .with_line_number(false)
+            .with_filter(EnvFilter::new("quark=info"));
+        (Some(layer), Some(guard))
+    } else {
+        (None, None)
+    };
 
     #[cfg(debug_assertions)]
     let terminal_layer = tracing_subscriber::fmt::layer()
         .with_file(false)
         .with_writer(std::io::stdout)
-        .with_filter(terminal_filter);
-
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(non_blocking)
-        .with_ansi(false)
-        .with_file(false)
-        .with_line_number(false)
-        .with_filter(file_filter);
+        .with_filter(EnvFilter::new("quark=trace"));
 
     #[cfg(debug_assertions)]
     let subscriber = tracing_subscriber::registry()
@@ -39,7 +39,7 @@ pub fn start_logs(conf: &config::Log) -> WorkerGuard {
     #[cfg(not(debug_assertions))]
     let subscriber = tracing_subscriber::registry().with(file_layer);
 
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
 
     guard
 }
@@ -56,5 +56,5 @@ fn build_appender(path: &str, config: &config::Log) -> RollingFileAppender {
         .filename_prefix(&config.prefix)
         .filename_suffix(&config.suffix)
         .build(path)
-        .expect("failed to initialize log appender")
+        .expect("Failed to initialize log appender")
 }
