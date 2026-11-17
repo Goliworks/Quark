@@ -22,6 +22,17 @@ idle_check_interval = 20   # (Optional) Interval in seconds between idle checks.
 max_conn_per_ip = 10       # (Optional) Maximum number of simultaneous connections per IP address. (default: None)
 tls_proxy_verify = true    # (Optional) Verify TLS certificates of backend servers. (default: true)
 
+# (Optional) Logging configuration, based on the options of tracing-appender.
+# Logs are written to files by a non-blocking background writer.
+[global.log]
+path = "/path/to/your/log/directory" # (Optional) Directory where log files are written. (default: "/var/log/quark")
+disable = false                      # (Optional) Disable logging completely. (default: false)
+rotation = "weekly"                  # (Optional) Log file rotation frequency. (allowed: "minutely", "hourly", "daily", "weekly", "never")
+buffer_lines_limit = 2048            # (Optional) Maximum number of log lines buffered in memory before the writer drops them (see `lossy`). (default: 2048)
+prefix = "my_quark_log"              # (Optional) Prefix of the log file names. (default: "quark")
+suffix = "ext"                       # (Optional) Suffix (extension) of the log file names. (default: "log")
+lossy = false                        # (Optional) If true, log lines are dropped when the buffer is full instead of blocking the application. (default: false)
+
 # The 'main' server is always created by default, even if not explicitly defined in the config file.
 # You can configure the main server or define additional ones using [server.<name>].
 [servers.main] # (Optional) Define a server.

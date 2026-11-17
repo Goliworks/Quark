@@ -38,6 +38,7 @@ pub struct Global {
     pub log: Option<Log>,
 }
 
+// Parameters based on tracing_appender config.
 #[derive(Debug, Deserialize)]
 pub struct Log {
     pub path: Option<String>,
