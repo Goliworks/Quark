@@ -452,7 +452,7 @@ fn get_toml_config(path: String) -> ConfigToml {
                     .get_or_insert_with(HashMap::new)
                     .extend(services);
             }
-            if let Some(loadbalancers) = sub_config.loadbalancer {
+            if let Some(loadbalancers) = sub_config.loadbalancers {
                 config
                     .loadbalancers
                     .get_or_insert_with(HashMap::new)

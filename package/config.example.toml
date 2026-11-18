@@ -10,8 +10,8 @@ import = [
 
 [global] # (Optional) Global configuration for the server.
 backlog = 4096             # (Optional) Maximum number of pending connections the server can queue. (default: 4096)
-max_connection = 1024      # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
-max_request = 100          # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
+max_connections = 1024     # (Optional) Maximum number of simultaneous client connections allowed. (default: 1024)
+max_requests = 100         # (Optional) Maximum number of simultaneous HTTP requests allowed. (default: 100)
 keepalive = true           # (Optional) Enable HTTP keep-alive. (default: true)
 keepalive_timeout = 60     # (Optional) Timeout in seconds for HTTP keep-alive connections. (default: 60s)
 keepalive_interval = 20    # (Optional) Interval in seconds between HTTP keep-alive probes. (default: 20s)
@@ -42,45 +42,45 @@ proxy_timeout = 60 # (Optional) Timeout in seconds for forwarding requests to th
 
 # (Optional) Headers at server level (apply to all services on this server)
 [servers.main.headers.locations]
-request.set."Header-To-Set" = "value" # (Optionnal) Add or override a request header before forwarding to backend.
+request.set."Header-To-Set" = "value" # (Optional) Add or override a request header before forwarding to backend.
 request.set."Header-To-Set-2" = "value"
 request.del = [
   "Header-To-Delete",
   "Header-To-Delete-2",
 ] # (Optional) Remove specific request headers from the incoming request.
-response.set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+response.set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
 response.del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific response headers from the outgoing response.
 
-# (Optionnal) # Headers applied when serving static files directly from the server.
+# (Optional) # Headers applied when serving static files directly from the server.
 [servers.main.headers.file_servers]
-set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
 del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific response headers from the outgoing response.
 
 [services.your_service_name] # Define a new service to be handled by the server.
 domain = "yourservice.com"                        # Public domain name for this service.
-server = "server_name"                            # (Optional) Name of the [server.<name>] section to associate with this service. (default: "main")
+server = "server_name"                            # (Optional) Name of the [servers.<name>] section to associate with this service. (default: "main")
 tls.certificate = "/path/to/your/certificate.pem" # (Optional) Path to the TLS/SSL certificate file.
 tls.key = "/path/to/your/key.pem"                 # (Optional) Path to the private key file for the TLS/SSL certificate.
 tls.redirection = true                            # (Optional) If true, automatically redirect HTTP requests to HTTPS. (default: true)
 
-# (Optionnal) Headers at service level (apply to a specific service)
+# (Optional) Headers at service level (apply to a specific service)
 [services.monservice.headers.locations]
-request.set."Header-To-Set" = "value" # (Optionnal) Add or override a request header before forwarding to backend.
+request.set."Header-To-Set" = "value" # (Optional) Add or override a request header before forwarding to backend.
 request.del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific request headers from the incoming request.
-response.set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+response.set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
 response.del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific response headers from the outgoing response.
 
-# (Optionnal) # Headers applied when serving static files directly from the server.
-[services.monservice.headers.file_servers]
-set."Header-To-Set" = "value" # (Optionnal) Add or override a response header before sending to the client.
+# (Optional) # Headers applied when serving static files directly from the server.
+[services.your_service_name.headers.file_servers]
+set."Header-To-Set" = "value" # (Optional) Add or override a response header before sending to the client.
 del = [
   "Header-To-Delete",
 ] # (Optional) Remove specific response headers from the outgoing response.

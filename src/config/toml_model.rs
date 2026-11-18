@@ -17,7 +17,7 @@ pub struct ConfigToml {
 #[derive(Debug, Deserialize)]
 pub struct SubConfigToml {
     pub services: Option<HashMap<String, Service>>,
-    pub loadbalancer: Option<HashMap<String, Loadbalancer>>,
+    pub loadbalancers: Option<HashMap<String, Loadbalancer>>,
 }
 
 // Global config.
