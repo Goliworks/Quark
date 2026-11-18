@@ -178,7 +178,7 @@ async fn init_servers(
             let http = Arc::clone(&http);
             let max_conns = Arc::clone(&max_conns);
             let server_handler = Arc::clone(&server_handler);
-            let tls_certs = Arc::clone(&tls_certs).clone();
+            let tls_certs = Arc::clone(&tls_certs);
             let limiter = limiter.clone();
 
             let https_config = HttpServerConfig {
